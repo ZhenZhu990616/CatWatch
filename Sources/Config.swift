@@ -92,8 +92,8 @@ struct ConfigDraft {
     static let defaultPanelTextOpacity = 1.0
     static let defaultPanelTextColor: TouchBarTextColor = .system
     static let defaultPanelFontSize = 14.0
-    static let defaultPanelWidth = 430
-    static let defaultPanelHeight = 260
+    static let defaultPanelWidth = 520
+    static let defaultPanelHeight = 320
 
     static func load() -> ConfigDraft {
         let defaults = UserDefaults.standard
