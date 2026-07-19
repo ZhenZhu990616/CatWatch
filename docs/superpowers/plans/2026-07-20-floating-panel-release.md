@@ -22,6 +22,7 @@ Create `.gitignore` with:
 
 ```gitignore
 .DS_Store
+.worktrees/
 .build/
 .swiftpm/
 DerivedData/
