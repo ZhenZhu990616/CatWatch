@@ -1,0 +1,10 @@
+.DS_Store
+.tmp-*.png
+.vscode/
+.worktrees/
+.build/
+.swiftpm/
+DerivedData/
+dist/
+node_modules/
+*.xcuserstate

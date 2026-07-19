@@ -22,6 +22,8 @@ Create `.gitignore` with:
 
 ```gitignore
 .DS_Store
+.tmp-*.png
+.vscode/
 .worktrees/
 .build/
 .swiftpm/

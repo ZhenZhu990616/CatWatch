@@ -1,0 +1,700 @@
+import CoreGraphics
+import Foundation
+import Security
+
+struct AppConfig {
+    let codexCredentials: CodexOAuthCredentials
+    let model: String
+    let thinkingEnabled: Bool
+    let reasoningEffort: ReasoningEffort
+    let reasoningSummary: ReasoningSummary
+    let textVerbosity: TextVerbosity
+    let serviceTier: ServiceTier
+    let maxOutputTokens: Int
+    let outputDisplayMode: OutputDisplayMode
+    let touchBarFontSize: Double
+    let touchBarTextColor: TouchBarTextColor
+    let touchBarTextIntensity: Double
+    let touchBarTextAlignment: TouchBarTextAlignment
+    let prompt: String
+    let instructions: String
+    let maxImageEdge: Int
+
+    static func load() throws -> AppConfig {
+        try ConfigDraft.load().makeConfig()
+    }
+}
+
+struct ConfigDraft {
+    var model: String
+    var thinkingEnabled: Bool
+    var reasoningEffort: ReasoningEffort
+    var reasoningSummary: ReasoningSummary
+    var textVerbosity: TextVerbosity
+    var serviceTier: ServiceTier
+    var maxOutputTokens: Int
+    var outputDisplayMode: OutputDisplayMode
+    var touchBarFontSize: Double
+    var touchBarTextColor: TouchBarTextColor
+    var touchBarTextIntensity: Double
+    var touchBarTextAlignment: TouchBarTextAlignment
+    var prompt: String
+    var instructions: String
+    var hotKeyText: String
+    var selectionHotKeyText: String
+    var panelHotKeyText: String
+    var maxImageEdge: Int
+    var captureRegionEnabled: Bool
+    var captureRegionX: Double
+    var captureRegionY: Double
+    var captureRegionWidth: Double
+    var captureRegionHeight: Double
+    var panelOpacity: Double
+    var panelTextOpacity: Double
+    var panelTextColor: TouchBarTextColor
+    var panelFontSize: Double
+    var panelWidth: Int
+    var panelHeight: Int
+    var panelOriginX: Double?
+    var panelOriginY: Double?
+
+    /// gpt-5.6-terra：官方定位的日常默认档（性能≈gpt-5.5、更快更省额度）；
+    /// 复杂问题可在设置里切 gpt-5.6-sol（旗舰）。
+    static let defaultModel = "gpt-5.6-terra"
+
+    /// 设置界面的模型快捷选择（2026-07 经 ChatGPT OAuth 可用的多模态模型；
+    /// gpt-5.3-codex-spark 为纯文本模型不支持图片输入，故不列入）。
+    static let suggestedModels: [(id: String, hint: String)] = [
+        ("gpt-5.6-sol", "旗舰 · 最强推理"),
+        ("gpt-5.6-terra", "日常均衡 · 推荐"),
+        ("gpt-5.6-luna", "最快最省"),
+        ("gpt-5.5", "上一代旗舰")
+    ]
+    static let defaultThinkingEnabled = true
+    static let defaultReasoningEffort: ReasoningEffort = .medium
+    static let defaultReasoningSummary: ReasoningSummary = .none
+    static let defaultTextVerbosity: TextVerbosity = .low
+    static let defaultServiceTier: ServiceTier = .systemDefault
+    static let defaultMaxOutputTokens = 0
+    static let defaultOutputDisplayMode: OutputDisplayMode = .floatingPanel
+    static let defaultTouchBarFontSize = 14.0
+    static let defaultTouchBarTextColor: TouchBarTextColor = .system
+    static let defaultTouchBarTextIntensity = 1.0
+    static let defaultTouchBarTextAlignment: TouchBarTextAlignment = .center
+    static let defaultPrompt = "请分析这张截图，并用中文简洁回答。"
+    static let defaultInstructions = "你是一个简洁、准确的中文屏幕分析助手。"
+    static let defaultHotKey = "cmd+shift+l"
+    static let defaultSelectionHotKey = "cmd+shift+k"
+    static let defaultPanelHotKey = "cmd+shift+o"
+    static let defaultMaxImageEdge = 1600
+    static let defaultCaptureRegionEnabled = false
+    static let defaultPanelOpacity = 0.94
+    static let defaultPanelTextOpacity = 1.0
+    static let defaultPanelTextColor: TouchBarTextColor = .system
+    static let defaultPanelFontSize = 14.0
+    static let defaultPanelWidth = 430
+    static let defaultPanelHeight = 260
+
+    static func load() -> ConfigDraft {
+        let defaults = UserDefaults.standard
+        let env = ProcessInfo.processInfo.environment
+        let storedPrompt = defaults.string(forKey: Keys.prompt)
+        let prompt = storedPrompt == "Analyze this screenshot and answer concisely." ? defaultPrompt : storedPrompt
+
+        let storedModel = defaults.string(forKey: Keys.model)
+        let model: String?
+        switch storedModel {
+        case "gpt-4o-mini", "gpt-5.5":
+            // 历史默认值迁移到当前默认模型。
+            model = defaultModel
+        case "gpt-5.6":
+            // 裸 "gpt-5.6" 不是有效 ID（有效：gpt-5.6-sol/terra/luna），
+            // 按旗舰意图迁移到 sol。
+            model = "gpt-5.6-sol"
+        default:
+            model = storedModel
+        }
+
+        return ConfigDraft(
+            model: model
+                ?? env["SCREEN_LLM_MODEL"]
+                ?? defaultModel,
+            thinkingEnabled: defaults.object(forKey: Keys.thinkingEnabled) == nil
+                ? parseBool(env["SCREEN_LLM_THINKING"]) ?? defaultThinkingEnabled
+                : defaults.bool(forKey: Keys.thinkingEnabled),
+            reasoningEffort: ReasoningEffort(
+                rawValue: defaults.string(forKey: Keys.reasoningEffort)
+                    ?? env["SCREEN_LLM_REASONING_EFFORT"]
+                    ?? defaultReasoningEffort.rawValue
+            ) ?? defaultReasoningEffort,
+            reasoningSummary: ReasoningSummary(
+                rawValue: defaults.string(forKey: Keys.reasoningSummary)
+                    ?? env["SCREEN_LLM_REASONING_SUMMARY"]
+                    ?? defaultReasoningSummary.rawValue
+            ) ?? defaultReasoningSummary,
+            textVerbosity: TextVerbosity(
+                rawValue: defaults.string(forKey: Keys.textVerbosity)
+                    ?? env["SCREEN_LLM_TEXT_VERBOSITY"]
+                    ?? defaultTextVerbosity.rawValue
+            ) ?? defaultTextVerbosity,
+            serviceTier: ServiceTier(
+                rawValue: defaults.string(forKey: Keys.serviceTier)
+                    ?? env["SCREEN_LLM_SERVICE_TIER"]
+                    ?? defaultServiceTier.rawValue
+            ) ?? defaultServiceTier,
+            maxOutputTokens: defaults.object(forKey: Keys.maxOutputTokens) == nil
+                ? Int(env["SCREEN_LLM_MAX_OUTPUT_TOKENS"] ?? "") ?? defaultMaxOutputTokens
+                : defaults.integer(forKey: Keys.maxOutputTokens),
+            outputDisplayMode: OutputDisplayMode(
+                rawValue: defaults.string(forKey: Keys.outputDisplayMode)
+                    ?? env["SCREEN_LLM_OUTPUT_DISPLAY_MODE"]
+                    ?? defaultOutputDisplayMode.rawValue
+            ) ?? defaultOutputDisplayMode,
+            touchBarFontSize: defaults.object(forKey: Keys.touchBarFontSize) == nil
+                ? Double(env["SCREEN_LLM_TOUCHBAR_FONT_SIZE"] ?? "") ?? defaultTouchBarFontSize
+                : defaults.double(forKey: Keys.touchBarFontSize),
+            touchBarTextColor: TouchBarTextColor(
+                rawValue: defaults.string(forKey: Keys.touchBarTextColor)
+                    ?? env["SCREEN_LLM_TOUCHBAR_TEXT_COLOR"]
+                    ?? defaultTouchBarTextColor.rawValue
+            ) ?? defaultTouchBarTextColor,
+            touchBarTextIntensity: defaults.object(forKey: Keys.touchBarTextIntensity) == nil
+                ? Double(env["SCREEN_LLM_TOUCHBAR_TEXT_INTENSITY"] ?? "") ?? defaultTouchBarTextIntensity
+                : defaults.double(forKey: Keys.touchBarTextIntensity),
+            touchBarTextAlignment: TouchBarTextAlignment(
+                rawValue: defaults.string(forKey: Keys.touchBarTextAlignment)
+                    ?? env["SCREEN_LLM_TOUCHBAR_TEXT_ALIGNMENT"]
+                    ?? defaultTouchBarTextAlignment.rawValue
+            ) ?? defaultTouchBarTextAlignment,
+            prompt: prompt
+                ?? env["SCREEN_LLM_PROMPT"]
+                ?? defaultPrompt,
+            instructions: defaults.string(forKey: Keys.instructions)
+                ?? env["SCREEN_LLM_INSTRUCTIONS"]
+                ?? defaultInstructions,
+            hotKeyText: defaults.string(forKey: Keys.hotKey)
+                ?? env["SCREEN_LLM_HOTKEY"]
+                ?? defaultHotKey,
+            selectionHotKeyText: defaults.string(forKey: Keys.selectionHotKey)
+                ?? env["SCREEN_LLM_SELECTION_HOTKEY"]
+                ?? defaultSelectionHotKey,
+            panelHotKeyText: defaults.string(forKey: Keys.panelHotKey)
+                ?? env["SCREEN_LLM_PANEL_HOTKEY"]
+                ?? defaultPanelHotKey,
+            maxImageEdge: defaults.object(forKey: Keys.maxImageEdge) == nil
+                ? Int(env["SCREEN_LLM_MAX_IMAGE_EDGE"] ?? "") ?? defaultMaxImageEdge
+                : defaults.integer(forKey: Keys.maxImageEdge),
+            captureRegionEnabled: defaults.object(forKey: Keys.captureRegionEnabled) == nil
+                ? parseBool(env["SCREEN_LLM_CAPTURE_REGION_ENABLED"]) ?? defaultCaptureRegionEnabled
+                : defaults.bool(forKey: Keys.captureRegionEnabled),
+            captureRegionX: defaults.object(forKey: Keys.captureRegionX) == nil
+                ? Double(env["SCREEN_LLM_CAPTURE_REGION_X"] ?? "") ?? 0
+                : defaults.double(forKey: Keys.captureRegionX),
+            captureRegionY: defaults.object(forKey: Keys.captureRegionY) == nil
+                ? Double(env["SCREEN_LLM_CAPTURE_REGION_Y"] ?? "") ?? 0
+                : defaults.double(forKey: Keys.captureRegionY),
+            captureRegionWidth: defaults.object(forKey: Keys.captureRegionWidth) == nil
+                ? Double(env["SCREEN_LLM_CAPTURE_REGION_WIDTH"] ?? "") ?? 0
+                : defaults.double(forKey: Keys.captureRegionWidth),
+            captureRegionHeight: defaults.object(forKey: Keys.captureRegionHeight) == nil
+                ? Double(env["SCREEN_LLM_CAPTURE_REGION_HEIGHT"] ?? "") ?? 0
+                : defaults.double(forKey: Keys.captureRegionHeight),
+            panelOpacity: defaults.object(forKey: Keys.panelOpacity) == nil
+                ? Double(env["SCREEN_LLM_PANEL_OPACITY"] ?? "") ?? defaultPanelOpacity
+                : defaults.double(forKey: Keys.panelOpacity),
+            panelTextOpacity: defaults.object(forKey: Keys.panelTextOpacity) == nil
+                ? Double(env["SCREEN_LLM_PANEL_TEXT_OPACITY"] ?? "") ?? defaultPanelTextOpacity
+                : defaults.double(forKey: Keys.panelTextOpacity),
+            panelTextColor: TouchBarTextColor(
+                rawValue: defaults.string(forKey: Keys.panelTextColor)
+                    ?? env["SCREEN_LLM_PANEL_TEXT_COLOR"]
+                    ?? defaultPanelTextColor.rawValue
+            ) ?? defaultPanelTextColor,
+            panelFontSize: defaults.object(forKey: Keys.panelFontSize) == nil
+                ? Double(env["SCREEN_LLM_PANEL_FONT_SIZE"] ?? "") ?? defaultPanelFontSize
+                : defaults.double(forKey: Keys.panelFontSize),
+            panelWidth: defaults.object(forKey: Keys.panelWidth) == nil
+                ? Int(env["SCREEN_LLM_PANEL_WIDTH"] ?? "") ?? defaultPanelWidth
+                : defaults.integer(forKey: Keys.panelWidth),
+            panelHeight: defaults.object(forKey: Keys.panelHeight) == nil
+                ? Int(env["SCREEN_LLM_PANEL_HEIGHT"] ?? "") ?? defaultPanelHeight
+                : defaults.integer(forKey: Keys.panelHeight),
+            panelOriginX: defaults.object(forKey: Keys.panelOriginX) == nil
+                ? nil
+                : defaults.double(forKey: Keys.panelOriginX),
+            panelOriginY: defaults.object(forKey: Keys.panelOriginY) == nil
+                ? nil
+                : defaults.double(forKey: Keys.panelOriginY)
+        )
+    }
+
+    func save() {
+        let defaults = UserDefaults.standard
+        defaults.set(model, forKey: Keys.model)
+        defaults.set(thinkingEnabled, forKey: Keys.thinkingEnabled)
+        defaults.set(reasoningEffort.rawValue, forKey: Keys.reasoningEffort)
+        defaults.set(reasoningSummary.rawValue, forKey: Keys.reasoningSummary)
+        defaults.set(textVerbosity.rawValue, forKey: Keys.textVerbosity)
+        defaults.set(serviceTier.rawValue, forKey: Keys.serviceTier)
+        defaults.set(maxOutputTokens, forKey: Keys.maxOutputTokens)
+        defaults.set(outputDisplayMode.rawValue, forKey: Keys.outputDisplayMode)
+        defaults.set(touchBarFontSize, forKey: Keys.touchBarFontSize)
+        defaults.set(touchBarTextColor.rawValue, forKey: Keys.touchBarTextColor)
+        defaults.set(touchBarTextIntensity, forKey: Keys.touchBarTextIntensity)
+        defaults.set(touchBarTextAlignment.rawValue, forKey: Keys.touchBarTextAlignment)
+        defaults.set(prompt, forKey: Keys.prompt)
+        defaults.set(instructions, forKey: Keys.instructions)
+        defaults.set(hotKeyText, forKey: Keys.hotKey)
+        defaults.set(selectionHotKeyText, forKey: Keys.selectionHotKey)
+        defaults.set(panelHotKeyText, forKey: Keys.panelHotKey)
+        defaults.set(maxImageEdge, forKey: Keys.maxImageEdge)
+        defaults.set(captureRegionEnabled, forKey: Keys.captureRegionEnabled)
+        defaults.set(captureRegionX, forKey: Keys.captureRegionX)
+        defaults.set(captureRegionY, forKey: Keys.captureRegionY)
+        defaults.set(captureRegionWidth, forKey: Keys.captureRegionWidth)
+        defaults.set(captureRegionHeight, forKey: Keys.captureRegionHeight)
+        defaults.set(panelOpacity, forKey: Keys.panelOpacity)
+        defaults.set(panelTextOpacity, forKey: Keys.panelTextOpacity)
+        defaults.set(panelTextColor.rawValue, forKey: Keys.panelTextColor)
+        defaults.set(panelFontSize, forKey: Keys.panelFontSize)
+        defaults.set(panelWidth, forKey: Keys.panelWidth)
+        defaults.set(panelHeight, forKey: Keys.panelHeight)
+        if let panelOriginX {
+            defaults.set(panelOriginX, forKey: Keys.panelOriginX)
+        } else {
+            defaults.removeObject(forKey: Keys.panelOriginX)
+        }
+        if let panelOriginY {
+            defaults.set(panelOriginY, forKey: Keys.panelOriginY)
+        } else {
+            defaults.removeObject(forKey: Keys.panelOriginY)
+        }
+    }
+
+    func makeConfig() throws -> AppConfig {
+        try makeConfig(codexCredentials: KeychainStore.readCodexCredentials())
+    }
+
+    func makeConfig(codexCredentials: CodexOAuthCredentials?) throws -> AppConfig {
+        guard let credentials = codexCredentials else {
+            throw AppError.configuration("请先登录 ChatGPT/Codex。")
+        }
+
+        let trimmedModel = model.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedModel.isEmpty else {
+            throw AppError.configuration("模型不能为空。")
+        }
+
+        return AppConfig(
+            codexCredentials: credentials,
+            model: trimmedModel,
+            thinkingEnabled: thinkingEnabled,
+            reasoningEffort: reasoningEffort,
+            reasoningSummary: reasoningSummary,
+            textVerbosity: textVerbosity,
+            serviceTier: serviceTier,
+            maxOutputTokens: max(0, maxOutputTokens),
+            outputDisplayMode: outputDisplayMode,
+            touchBarFontSize: min(24, max(10, touchBarFontSize)),
+            touchBarTextColor: touchBarTextColor,
+            touchBarTextIntensity: min(1.0, max(0.35, touchBarTextIntensity)),
+            touchBarTextAlignment: touchBarTextAlignment,
+            prompt: prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? Self.defaultPrompt : prompt,
+            instructions: instructions.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? Self.defaultInstructions : instructions,
+            maxImageEdge: max(640, maxImageEdge)
+        )
+    }
+
+    func makeShortcut() throws -> Shortcut {
+        try Shortcut.parse(hotKeyText)
+    }
+
+    func makePanelShortcut() throws -> Shortcut {
+        try Shortcut.parse(panelHotKeyText)
+    }
+
+    func makeSelectionShortcut() throws -> Shortcut {
+        try Shortcut.parse(selectionHotKeyText)
+    }
+
+    var normalizedPanelOpacity: Double {
+        min(1.0, max(0.0, panelOpacity))
+    }
+
+    var normalizedPanelTextOpacity: Double {
+        min(1.0, max(0.0, panelTextOpacity))
+    }
+
+    var normalizedPanelFontSize: Double {
+        min(28, max(10, panelFontSize))
+    }
+
+    var captureRegion: CGRect? {
+        guard captureRegionEnabled,
+              captureRegionWidth >= 12,
+              captureRegionHeight >= 12 else {
+            return nil
+        }
+        return CGRect(
+            x: captureRegionX,
+            y: captureRegionY,
+            width: captureRegionWidth,
+            height: captureRegionHeight
+        )
+    }
+
+    var normalizedPanelWidth: Int {
+        min(900, max(120, panelWidth))
+    }
+
+    var normalizedPanelHeight: Int {
+        min(720, max(42, panelHeight))
+    }
+
+    var normalizedTouchBarFontSize: Double {
+        min(24, max(10, touchBarFontSize))
+    }
+
+    /// 与 makeConfig 的下限一致；防止用户存入 0/负数把截图压成 1×1。
+    var normalizedMaxImageEdge: Int {
+        max(640, maxImageEdge)
+    }
+
+    var normalizedTouchBarTextIntensity: Double {
+        min(1.0, max(0.35, touchBarTextIntensity))
+    }
+
+    private static func parseBool(_ value: String?) -> Bool? {
+        guard let value else { return nil }
+        switch value.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
+        case "1", "true", "yes", "on": return true
+        case "0", "false", "no", "off": return false
+        default: return nil
+        }
+    }
+}
+
+enum OutputDisplayMode: String, CaseIterable, Identifiable {
+    case floatingPanel
+    case touchBar
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .floatingPanel: return "悬浮窗"
+        case .touchBar: return "Touch Bar"
+        }
+    }
+}
+
+enum TouchBarTextColor: String, CaseIterable, Identifiable {
+    case system
+    case white
+    case black
+    case gray
+    case blue
+    case green
+    case yellow
+    case red
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .system: return "系统"
+        case .white: return "白色"
+        case .black: return "黑色"
+        case .gray: return "灰色"
+        case .blue: return "蓝色"
+        case .green: return "绿色"
+        case .yellow: return "黄色"
+        case .red: return "红色"
+        }
+    }
+}
+
+enum TouchBarTextAlignment: String, CaseIterable, Identifiable {
+    case leading
+    case center
+    case trailing
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .leading: return "左"
+        case .center: return "中"
+        case .trailing: return "右"
+        }
+    }
+}
+
+enum ReasoningEffort: String, CaseIterable, Identifiable {
+    case minimal
+    case low
+    case medium
+    case high
+    case xhigh
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .minimal: return "极低"
+        case .low: return "低"
+        case .medium: return "中"
+        case .high: return "高"
+        case .xhigh: return "超高"
+        }
+    }
+}
+
+enum ReasoningSummary: String, CaseIterable, Identifiable {
+    case none
+    case auto
+    case concise
+    case detailed
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .none: return "关闭"
+        case .auto: return "自动"
+        case .concise: return "简短"
+        case .detailed: return "详细"
+        }
+    }
+
+    var requestValue: String? {
+        self == .none ? nil : rawValue
+    }
+}
+
+enum TextVerbosity: String, CaseIterable, Identifiable {
+    case low
+    case medium
+    case high
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .low: return "简洁"
+        case .medium: return "标准"
+        case .high: return "详细"
+        }
+    }
+}
+
+enum ServiceTier: String, CaseIterable, Identifiable {
+    case systemDefault = ""
+    case auto
+    case `default` = "default"
+    case flex
+    case scale
+    case priority
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .systemDefault: return "系统默认"
+        case .auto: return "自动"
+        case .default: return "默认"
+        case .flex: return "Flex"
+        case .scale: return "Scale"
+        case .priority: return "Priority"
+        }
+    }
+
+    var requestValue: String? {
+        rawValue.isEmpty ? nil : rawValue
+    }
+}
+
+private enum Keys {
+    static let model = "screenLLM.model"
+    static let thinkingEnabled = "screenLLM.thinkingEnabled"
+    static let reasoningEffort = "screenLLM.reasoningEffort"
+    static let reasoningSummary = "screenLLM.reasoningSummary"
+    static let textVerbosity = "screenLLM.textVerbosity"
+    static let serviceTier = "screenLLM.serviceTier"
+    static let maxOutputTokens = "screenLLM.maxOutputTokens"
+    static let outputDisplayMode = "screenLLM.outputDisplayMode"
+    static let touchBarFontSize = "screenLLM.touchBarFontSize"
+    static let touchBarTextColor = "screenLLM.touchBarTextColor"
+    static let touchBarTextIntensity = "screenLLM.touchBarTextIntensity"
+    static let touchBarTextAlignment = "screenLLM.touchBarTextAlignment"
+    static let prompt = "screenLLM.prompt"
+    static let instructions = "screenLLM.instructions"
+    static let hotKey = "screenLLM.hotKey"
+    static let selectionHotKey = "screenLLM.selectionHotKey"
+    static let panelHotKey = "screenLLM.panelHotKey"
+    static let maxImageEdge = "screenLLM.maxImageEdge"
+    static let captureRegionEnabled = "screenLLM.captureRegionEnabled"
+    static let captureRegionX = "screenLLM.captureRegionX"
+    static let captureRegionY = "screenLLM.captureRegionY"
+    static let captureRegionWidth = "screenLLM.captureRegionWidth"
+    static let captureRegionHeight = "screenLLM.captureRegionHeight"
+    static let panelOpacity = "screenLLM.panelOpacity"
+    static let panelTextOpacity = "screenLLM.panelTextOpacity"
+    static let panelTextColor = "screenLLM.panelTextColor"
+    static let panelFontSize = "screenLLM.panelFontSize"
+    static let panelWidth = "screenLLM.panelWidth"
+    static let panelHeight = "screenLLM.panelHeight"
+    static let panelOriginX = "screenLLM.panelOriginX"
+    static let panelOriginY = "screenLLM.panelOriginY"
+}
+
+struct PromptPreset: Codable, Identifiable, Equatable {
+    var id: UUID
+    var name: String
+    var text: String
+}
+
+/// 提示词预设：JSON 存 UserDefaults，首次运行内置三条常用预设。
+enum PromptPresetStore {
+    private static let key = "screenLLM.promptPresets"
+
+    static func load() -> [PromptPreset] {
+        if let data = UserDefaults.standard.data(forKey: key),
+           let presets = try? JSONDecoder().decode([PromptPreset].self, from: data) {
+            return presets
+        }
+        let defaults = builtinPresets()
+        save(defaults)
+        return defaults
+    }
+
+    static func save(_ presets: [PromptPreset]) {
+        guard let data = try? JSONEncoder().encode(presets) else { return }
+        UserDefaults.standard.set(data, forKey: key)
+    }
+
+    private static func builtinPresets() -> [PromptPreset] {
+        [
+            PromptPreset(id: UUID(), name: "通用分析", text: ConfigDraft.defaultPrompt),
+            PromptPreset(id: UUID(), name: "提取文字（OCR）", text: "只提取图中的全部文字，按原有排版输出，不要任何解释。"),
+            PromptPreset(id: UUID(), name: "翻译成中文", text: "把图中的文字翻译成中文，保持原有段落结构，只输出译文。")
+        ]
+    }
+}
+
+enum KeychainStore {
+    private static let service = "ScreenLLMAssistant"
+    private static let codexAccount = "CODEX_OAUTH_CREDENTIALS"
+    /// 所有异步写操作走同一条串行队列，保证"登出删除"和"刷新保存"
+    /// 按发起顺序落盘，不会出现登出后旧的保存任务把凭证写回去。
+    private static let writeQueue = DispatchQueue(label: "CatWatch.KeychainStore")
+
+    static func saveCodexCredentialsAsync(_ credentials: CodexOAuthCredentials) {
+        writeQueue.async {
+            try? saveCodexCredentials(credentials)
+        }
+    }
+
+    static func deleteCodexCredentialsAsync() {
+        writeQueue.async {
+            deleteCodexCredentials()
+        }
+    }
+
+    static func readCodexCredentials() -> CodexOAuthCredentials? {
+        guard let text = readString(account: codexAccount),
+              let data = text.data(using: .utf8) else {
+            return nil
+        }
+        return try? JSONDecoder().decode(CodexOAuthCredentials.self, from: data)
+    }
+
+    static func saveCodexCredentials(_ credentials: CodexOAuthCredentials) throws {
+        let data = try JSONEncoder().encode(credentials)
+        guard let text = String(data: data, encoding: .utf8) else {
+            throw AppError.configuration("无法编码登录凭证。")
+        }
+        try saveString(text, account: codexAccount)
+    }
+
+    static func deleteCodexCredentials() {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: codexAccount
+        ]
+        // errSecItemNotFound 视为已删除，无需报错。
+        SecItemDelete(query as CFDictionary)
+    }
+
+    private static func readString(account: String) -> String? {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: account,
+            kSecReturnData as String: true,
+            kSecMatchLimit as String: kSecMatchLimitOne
+        ]
+
+        var item: CFTypeRef?
+        let status = SecItemCopyMatching(query as CFDictionary, &item)
+        guard status == errSecSuccess,
+              let data = item as? Data,
+              let value = String(data: data, encoding: .utf8) else {
+            return nil
+        }
+        return value
+    }
+
+    private static func saveString(_ value: String, account: String) throws {
+        let data = Data(value.utf8)
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: account
+        ]
+
+        // 更新时也带上 accessibility，让此前用 WhenUnlocked 存过的既有凭证
+        // 追溯升级为 ThisDeviceOnly，不只对新增条目生效。
+        let attributes: [String: Any] = [
+            kSecValueData as String: data,
+            kSecAttrAccessible as String: kSecAttrAccessibleWhenUnlockedThisDeviceOnly
+        ]
+
+        let status = SecItemUpdate(query as CFDictionary, attributes as CFDictionary)
+        if status == errSecItemNotFound {
+            var addQuery = query
+            addQuery[kSecValueData as String] = data
+            // ThisDeviceOnly：refresh token 不进加密备份、不随迁移带到其他设备。
+            addQuery[kSecAttrAccessible as String] = kSecAttrAccessibleWhenUnlockedThisDeviceOnly
+            let addStatus = SecItemAdd(addQuery as CFDictionary, nil)
+            guard addStatus == errSecSuccess else {
+                throw AppError.configuration("无法将登录凭证保存到钥匙串：\(addStatus)。")
+            }
+        } else if status != errSecSuccess {
+            throw AppError.configuration("无法更新钥匙串中的登录凭证：\(status)。")
+        }
+    }
+}
+
+enum AppError: Error, LocalizedError {
+    case configuration(String)
+    case hotKey(String)
+    case screenshot(String)
+    case network(String)
+    case response(String)
+    /// 登录凭证已彻底失效（invalid_grant 等），需要重新走 OAuth 登录。
+    case authExpired(String)
+
+    var errorDescription: String? {
+        switch self {
+        case .configuration(let message),
+             .hotKey(let message),
+             .screenshot(let message),
+             .network(let message),
+             .response(let message),
+             .authExpired(let message):
+            return message
+        }
+    }
+}
