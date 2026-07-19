@@ -17,6 +17,11 @@ let package = Package(
         .executableTarget(
             name: "CatWatch",
             path: "Sources"
+        ),
+        .testTarget(
+            name: "CatWatchTests",
+            dependencies: ["CatWatch"],
+            path: "Tests/CatWatchTests"
         )
     ]
 )
