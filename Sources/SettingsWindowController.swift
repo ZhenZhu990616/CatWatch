@@ -13,7 +13,7 @@ struct SettingsState {
 }
 
 final class SettingsWindowController: NSWindowController {
-    private let model: SettingsViewModel
+    private let model: LegacySettingsViewModel
 
     init(
         draftProvider: @escaping () -> ConfigDraft,
@@ -23,7 +23,7 @@ final class SettingsWindowController: NSWindowController {
         onLogout: @escaping () -> Void,
         onPermission: @escaping () -> Void
     ) {
-        model = SettingsViewModel(
+        model = LegacySettingsViewModel(
             draftProvider: draftProvider,
             stateProvider: stateProvider,
             onSave: onSave,
@@ -110,7 +110,7 @@ extension SettingsWindowController: NSWindowDelegate {
     }
 }
 
-private final class SettingsViewModel: ObservableObject {
+private final class LegacySettingsViewModel: ObservableObject {
     @Published var selectedSection: SettingsSection = .shortcuts
     @Published var modelName: String
     @Published var thinkingEnabled: Bool
@@ -400,7 +400,7 @@ private final class SettingsViewModel: ObservableObject {
 // 控件、字号、间距全部使用系统默认，跟随浅色/深色与强调色。
 
 private struct SettingsRootView: View {
-    @ObservedObject var model: SettingsViewModel
+    @ObservedObject var model: LegacySettingsViewModel
 
     var body: some View {
         NavigationSplitView {
@@ -476,7 +476,7 @@ private struct SidebarRow: View {
 }
 
 private struct SaveBar: View {
-    @ObservedObject var model: SettingsViewModel
+    @ObservedObject var model: LegacySettingsViewModel
 
     var body: some View {
         HStack(spacing: 12) {
@@ -504,7 +504,7 @@ private struct SaveBar: View {
 // MARK: - 快捷键
 
 private struct ShortcutsPane: View {
-    @ObservedObject var model: SettingsViewModel
+    @ObservedObject var model: LegacySettingsViewModel
 
     var body: some View {
         Form {
@@ -575,7 +575,7 @@ private struct ShortcutsPane: View {
 // MARK: - 服务
 
 private struct ServicePane: View {
-    @ObservedObject var model: SettingsViewModel
+    @ObservedObject var model: LegacySettingsViewModel
 
     var body: some View {
         Form {
@@ -658,7 +658,7 @@ private struct ServicePane: View {
 // MARK: - 模型
 
 private struct ModelPane: View {
-    @ObservedObject var model: SettingsViewModel
+    @ObservedObject var model: LegacySettingsViewModel
 
     var body: some View {
         Form {
@@ -767,7 +767,7 @@ private struct ModelPane: View {
 // MARK: - 外观
 
 private struct AppearancePane: View {
-    @ObservedObject var model: SettingsViewModel
+    @ObservedObject var model: LegacySettingsViewModel
 
     var body: some View {
         Form {
@@ -874,7 +874,7 @@ private struct AppearancePane: View {
 // MARK: - 提示词
 
 private struct PromptPane: View {
-    @ObservedObject var model: SettingsViewModel
+    @ObservedObject var model: LegacySettingsViewModel
 
     var body: some View {
         Form {
