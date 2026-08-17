@@ -31,8 +31,8 @@ final class BatchCaptureQueueTests: XCTestCase {
         XCTAssertEqual(queue.beginCapture(), .started)
         queue.completeCapture(Data([3]))
 
-        XCTAssertEqual(queue.takeAllForSending(), [Data([1]), Data([2]), Data([3])])
-        XCTAssertEqual(queue.takeAllForSending(), [])
+        XCTAssertEqual(queue.takeAllForSending(), .images([Data([1]), Data([2]), Data([3])]))
+        XCTAssertEqual(queue.takeAllForSending(), .empty)
     }
 
     func testCancelInFlightCaptureDoesNotAppend() {
@@ -45,7 +45,25 @@ final class BatchCaptureQueueTests: XCTestCase {
         queue.cancelInFlightCapture()
         queue.completeCapture(Data([2]))
 
-        XCTAssertEqual(queue.takeAllForSending(), [Data([1])])
+        XCTAssertEqual(queue.takeAllForSending(), .images([Data([1])]))
+    }
+
+    func testTransferDuringInFlightDoesNotClearQueue() {
+        let queue = BatchCaptureQueue()
+
+        XCTAssertEqual(queue.beginCapture(), .started)
+        queue.completeCapture(Data([1]))
+        XCTAssertEqual(queue.beginCapture(), .started)
+
+        XCTAssertEqual(queue.immediateCaptureAction(), .waitForBatchCapture)
+        XCTAssertEqual(queue.count, 1)
+        XCTAssertFalse(queue.isEmpty)
+        XCTAssertEqual(queue.takeAllForSending(), .captureInFlight)
+
+        queue.cancelInFlightCapture()
+
+        XCTAssertEqual(queue.takeAllForSending(), .images([Data([1])]))
+        XCTAssertEqual(queue.takeAllForSending(), .empty)
     }
 
     func testRemoveLastAndClearEmptyTheQueue() {
@@ -57,13 +75,13 @@ final class BatchCaptureQueueTests: XCTestCase {
         queue.completeCapture(Data([2]))
 
         XCTAssertEqual(queue.removeLast(), Data([2]))
-        XCTAssertEqual(queue.takeAllForSending(), [Data([1])])
+        XCTAssertEqual(queue.takeAllForSending(), .images([Data([1])]))
 
         XCTAssertEqual(queue.beginCapture(), .started)
         queue.completeCapture(Data([3]))
         queue.clear()
 
-        XCTAssertEqual(queue.takeAllForSending(), [])
+        XCTAssertEqual(queue.takeAllForSending(), .empty)
         XCTAssertFalse(queue.isCapturing)
     }
 
@@ -77,5 +95,18 @@ final class BatchCaptureQueueTests: XCTestCase {
 
         queue.completeCapture(Data([1]))
         XCTAssertEqual(queue.immediateCaptureAction(), .sendQueuedImages)
+    }
+
+    func testClearDuringInFlightPreventsLateCompletionAndAllowsRestart() {
+        let queue = BatchCaptureQueue()
+
+        XCTAssertEqual(queue.beginCapture(), .started)
+        queue.clear()
+        queue.completeCapture(Data([1]))
+
+        XCTAssertEqual(queue.takeAllForSending(), .empty)
+        XCTAssertEqual(queue.beginCapture(), .started)
+        queue.completeCapture(Data([2]))
+        XCTAssertEqual(queue.takeAllForSending(), .images([Data([2])]))
     }
 }

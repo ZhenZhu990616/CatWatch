@@ -8,6 +8,12 @@ final class BatchCaptureQueue {
         case full
     }
 
+    enum TransferResult: Equatable {
+        case empty
+        case captureInFlight
+        case images([Data])
+    }
+
     enum ImmediateCaptureAction: Equatable {
         case captureCurrentScreen
         case sendQueuedImages
@@ -18,6 +24,14 @@ final class BatchCaptureQueue {
 
     private var queuedImages: [Data] = []
     private var isCaptureInFlight = false
+
+    var count: Int {
+        queuedImages.count
+    }
+
+    var isEmpty: Bool {
+        queuedImages.isEmpty
+    }
 
     var isCapturing: Bool {
         isCaptureInFlight
@@ -53,11 +67,15 @@ final class BatchCaptureQueue {
         return queuedImages.removeLast()
     }
 
-    func takeAllForSending() -> [Data] {
-        guard !isCaptureInFlight else { return [] }
-        guard !queuedImages.isEmpty else { return [] }
+    func takeAllForSending() -> TransferResult {
+        if isCaptureInFlight {
+            return .captureInFlight
+        }
+        guard !queuedImages.isEmpty else {
+            return .empty
+        }
         defer { queuedImages.removeAll(keepingCapacity: true) }
-        return queuedImages
+        return .images(queuedImages)
     }
 
     func clear() {
@@ -66,11 +84,11 @@ final class BatchCaptureQueue {
     }
 
     func immediateCaptureAction() -> ImmediateCaptureAction {
-        if !queuedImages.isEmpty {
-            return .sendQueuedImages
-        }
         if isCaptureInFlight {
             return .waitForBatchCapture
+        }
+        if !queuedImages.isEmpty {
+            return .sendQueuedImages
         }
         return .captureCurrentScreen
     }
