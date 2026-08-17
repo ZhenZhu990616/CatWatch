@@ -14,13 +14,7 @@ final class BatchCaptureQueue {
         case images([Data])
     }
 
-    enum ImmediateCaptureAction: Equatable {
-        case captureCurrentScreen
-        case sendQueuedImages
-        case waitForBatchCapture
-    }
-
-    let maximumImageCount = 8
+    static let maximumImageCount = 8
 
     private var queuedImages: [Data] = []
     private var isCaptureInFlight = false
@@ -38,7 +32,7 @@ final class BatchCaptureQueue {
     }
 
     func beginCapture() -> BeginCaptureResult {
-        if queuedImages.count >= maximumImageCount {
+        if queuedImages.count >= Self.maximumImageCount {
             return .full
         }
         guard !isCaptureInFlight else {
@@ -52,7 +46,7 @@ final class BatchCaptureQueue {
     func completeCapture(_ imageData: Data) {
         guard isCaptureInFlight else { return }
         isCaptureInFlight = false
-        guard queuedImages.count < maximumImageCount else { return }
+        guard queuedImages.count < Self.maximumImageCount else { return }
         queuedImages.append(imageData)
     }
 
@@ -83,13 +77,4 @@ final class BatchCaptureQueue {
         isCaptureInFlight = false
     }
 
-    func immediateCaptureAction() -> ImmediateCaptureAction {
-        if isCaptureInFlight {
-            return .waitForBatchCapture
-        }
-        if !queuedImages.isEmpty {
-            return .sendQueuedImages
-        }
-        return .captureCurrentScreen
-    }
 }

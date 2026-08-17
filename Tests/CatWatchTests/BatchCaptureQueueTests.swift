@@ -12,7 +12,7 @@ final class BatchCaptureQueueTests: XCTestCase {
 
         queue.cancelInFlightCapture()
 
-        for index in 0..<queue.maximumImageCount {
+        for index in 0..<BatchCaptureQueue.maximumImageCount {
             XCTAssertEqual(queue.beginCapture(), .started, "expected start for capture \(index)")
             queue.completeCapture(Data([UInt8(index)]))
         }
@@ -55,7 +55,7 @@ final class BatchCaptureQueueTests: XCTestCase {
         queue.completeCapture(Data([1]))
         XCTAssertEqual(queue.beginCapture(), .started)
 
-        XCTAssertEqual(queue.immediateCaptureAction(), .waitForBatchCapture)
+        XCTAssertTrue(queue.isCapturing)
         XCTAssertEqual(queue.count, 1)
         XCTAssertFalse(queue.isEmpty)
         XCTAssertEqual(queue.takeAllForSending(), .captureInFlight)
@@ -88,13 +88,14 @@ final class BatchCaptureQueueTests: XCTestCase {
     func testImmediateCaptureActionReflectsQueueState() {
         let queue = BatchCaptureQueue()
 
-        XCTAssertEqual(queue.immediateCaptureAction(), .captureCurrentScreen)
+        XCTAssertTrue(queue.isEmpty)
 
         XCTAssertEqual(queue.beginCapture(), .started)
-        XCTAssertEqual(queue.immediateCaptureAction(), .waitForBatchCapture)
+        XCTAssertTrue(queue.isCapturing)
 
         queue.completeCapture(Data([1]))
-        XCTAssertEqual(queue.immediateCaptureAction(), .sendQueuedImages)
+        XCTAssertFalse(queue.isEmpty)
+        XCTAssertFalse(queue.isCapturing)
     }
 
     func testClearDuringInFlightPreventsLateCompletionAndAllowsRestart() {
