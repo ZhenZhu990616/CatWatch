@@ -14,6 +14,7 @@ swift run CatWatch
 - 偏好设置
 - 立即截图
 - 框选截图（框内实时显示尺寸，Esc 取消）
+- 批量截图（⇧ 连按两下缓存，立即截图快捷键发送）
 - 中断当前任务
 - 呼出/隐藏浮窗
 - 历史记录（最近 50 条问答，点击可回看）
@@ -22,9 +23,9 @@ swift run CatWatch
 - 请求屏幕权限
 - 退出
 
-回答以流式增量显示在浮窗中（行内 Markdown 会被渲染）。macOS 14+ 使用
-ScreenCaptureKit 截屏（自动排除自家窗口、保留 Retina 分辨率），旧系统回退
-CGDisplayCreateImage。设置的「服务」页可开启开机自启（需以 .app 打包运行）。
+回答以流式增量显示在浮窗中（行内 Markdown 会被渲染）。使用
+ScreenCaptureKit 截屏（自动排除自家窗口、保留 Retina 分辨率）。设置的「服务」页可开启
+开机自启（需以 .app 打包运行）。
 
 ## 配置
 
@@ -44,9 +45,21 @@ CGDisplayCreateImage。设置的「服务」页可开启开机自启（需以 .a
 | `SCREEN_LLM_TOUCHBAR_TEXT_ALIGNMENT` | `center` |
 | `SCREEN_LLM_PROMPT` | `请分析这张截图，并用中文简洁回答。` |
 | `SCREEN_LLM_INSTRUCTIONS` | `你是一个简洁、准确的中文屏幕分析助手。` |
-| `SCREEN_LLM_HOTKEY` | `cmd+shift+l` |
-| `SCREEN_LLM_SELECTION_HOTKEY` | `cmd+shift+k` |
-| `SCREEN_LLM_PANEL_HOTKEY` | `cmd+shift+o` |
+| `SCREEN_LLM_HOTKEY` | `cmd double tap`（⌘ 连按两下） |
+| `SCREEN_LLM_SELECTION_HOTKEY` | `ctrl double tap`（⌃ 连按两下） |
+| `SCREEN_LLM_PANEL_HOTKEY` | `opt double tap`（⌥ 连按两下） |
+| `SCREEN_LLM_CAPTURE_REGION_HOTKEY` | `cmd+e`（⌘E） |
+| `SCREEN_LLM_BATCH_CAPTURE_HOTKEY` | `shift double tap`（⇧ 连按两下） |
 | `SCREEN_LLM_MAX_IMAGE_EDGE` | `1600` |
 
 登录凭证保存在 macOS 钥匙串。首次截图需要给启动程序的终端或可执行文件授予屏幕录制权限。
+
+### 批量截图
+
+- `⇧` 连按两下（可在“快捷键”设置中修改）会缓存一张立即截图，最多 8 张；图片只保存在内存中。
+- 缓存后按“立即截图”快捷键会一次发送全部缓存图片，不会额外截取当前屏幕。
+- 缓存期间按 `Esc` 会先取消正在采集的一张；没有在途采集时删除最后一张缓存。
+- 未登录或未授予屏幕录制权限时，发送前的失败不会清空缓存；请求已经开始后的网络/服务端失败不会恢复缓存。
+- “从屏幕选择”的默认快捷键为 `⌘E`。
+
+批量缓存不写入磁盘，退出、重启或退出登录后不会恢复。
