@@ -1,7 +1,7 @@
 import Foundation
 
 /// 流式过程中的进度事件，按真实 SSE 事件驱动 UI，替代此前的固定定时器假阶段。
-enum LLMStreamEvent: Sendable {
+enum LLMStreamEvent: Sendable, Equatable {
     /// 已建立连接，服务端开始返回 SSE。
     case connected
     /// 模型正在推理（收到 reasoning 相关事件）。
@@ -16,6 +16,7 @@ actor LLMClient {
     private let config: AppConfig
     private let session: URLSession
     private let onCredentialsRefreshed: @Sendable (CodexOAuthCredentials) -> Void
+    private let refreshCredentialsProvider: @Sendable (CodexOAuthCredentials) async throws -> CodexOAuthCredentials
     private var credentials: CodexOAuthCredentials
     private var refreshTask: Task<CodexOAuthCredentials, Error>?
 
@@ -25,11 +26,15 @@ actor LLMClient {
     init(
         config: AppConfig,
         session: URLSession = .shared,
-        onCredentialsRefreshed: @escaping @Sendable (CodexOAuthCredentials) -> Void
+        onCredentialsRefreshed: @escaping @Sendable (CodexOAuthCredentials) -> Void = { _ in },
+        refreshCredentials: (@Sendable (CodexOAuthCredentials) async throws -> CodexOAuthCredentials)? = nil
     ) {
         self.config = config
         self.session = session
         self.onCredentialsRefreshed = onCredentialsRefreshed
+        self.refreshCredentialsProvider = refreshCredentials ?? { credentials in
+            try await CodexOAuthClient().refresh(credentials)
+        }
         credentials = config.codexCredentials
     }
 
@@ -48,8 +53,9 @@ actor LLMClient {
 
         let current = credentials
         let callback = onCredentialsRefreshed
+        let provider = self.refreshCredentialsProvider
         let task = Task.detached {
-            let refreshed = try await CodexOAuthClient().refresh(current)
+            let refreshed = try await provider(current)
             callback(refreshed)
             return refreshed
         }

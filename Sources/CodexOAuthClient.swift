@@ -18,10 +18,16 @@ struct CodexOAuthCredentials: Codable, Sendable {
 final class CodexOAuthClient {
     private let clientID = "app_EMoamEEZ73f0CkXaXp7hrann"
     private let authorizeURL = URL(string: "https://auth.openai.com/oauth/authorize")!
-    private let tokenURL = URL(string: "https://auth.openai.com/oauth/token")!
+    private let tokenURL: URL
     private let redirectURI = "http://localhost:1455/auth/callback"
     private let scope = "openid profile email offline_access"
     private let originator = "codex_cli"
+    private let session: URLSession
+
+    init(session: URLSession = .shared, tokenURL: URL? = nil) {
+        self.session = session
+        self.tokenURL = tokenURL ?? URL(string: "https://auth.openai.com/oauth/token")!
+    }
 
     func login() async throws -> CodexOAuthCredentials {
         let verifier = try randomBase64URL(byteCount: 32)
@@ -95,25 +101,22 @@ final class CodexOAuthClient {
 
         let (data, response): (Data, URLResponse)
         do {
-            (data, response) = try await URLSession.shared.data(for: request)
+            (data, response) = try await session.data(for: request)
         } catch {
             throw AppError.network(error.localizedDescription)
         }
 
-        if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
-            // refresh token 被吊销/已轮换失效时刷新重试无意义，必须重新登录。
-            // 实测该端点的错误体是嵌套对象 {"error":{"code":"token_expired",...}}，
-            // 同时兼容标准 OAuth 的扁平 {"error":"invalid_grant"}。
-            if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
-                let flatCode = json["error"] as? String
-                let nestedCode = (json["error"] as? [String: Any])?["code"] as? String
-                let code = nestedCode ?? flatCode
-                if let code, ["invalid_grant", "token_expired", "invalid_token", "refresh_token_expired"].contains(code) {
-                    throw AppError.authExpired("ChatGPT 登录已失效，请重新登录。")
-                }
-            }
-            let text = String(data: data, encoding: .utf8) ?? "HTTP \(http.statusCode)"
-            throw AppError.response("登录凭证交换失败：\(text)")
+        let statusCode = (response as? HTTPURLResponse)?.statusCode ?? 200
+        return try Self.parseTokenResponse(data: data, statusCode: statusCode, fallbackRefreshToken: fallbackRefreshToken)
+    }
+
+    static func parseTokenResponse(
+        data: Data,
+        statusCode: Int,
+        fallbackRefreshToken: String?
+    ) throws -> CodexOAuthCredentials {
+        if !(200..<300).contains(statusCode) {
+            throw tokenResponseError(data: data, statusCode: statusCode)
         }
 
         guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
@@ -133,6 +136,22 @@ final class CodexOAuthClient {
             expires: Date().timeIntervalSince1970 + expiresNumber.doubleValue,
             accountId: accountId
         )
+    }
+
+    private static func tokenResponseError(data: Data, statusCode: Int) -> AppError {
+        // refresh token 被吊销/已轮换失效时刷新重试无意义，必须重新登录。
+        // 实测该端点的错误体是嵌套对象 {"error":{"code":"token_expired",...}}，
+        // 同时兼容标准 OAuth 的扁平 {"error":"invalid_grant"}。
+        if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+            let flatCode = json["error"] as? String
+            let nestedCode = (json["error"] as? [String: Any])?["code"] as? String
+            let code = nestedCode ?? flatCode
+            if let code, ["invalid_grant", "token_expired", "invalid_token", "refresh_token_expired"].contains(code) {
+                return .authExpired("ChatGPT 登录已失效，请重新登录。")
+            }
+        }
+        let text = String(data: data, encoding: .utf8) ?? "HTTP \(statusCode)"
+        return .response("登录凭证交换失败：\(text)")
     }
 }
 
