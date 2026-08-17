@@ -1078,25 +1078,35 @@ final class ResultPanelController: NSObject {
     private func applyVisualSettings() {
         backgroundView.alphaValue = CGFloat(panelOpacity)
         backgroundView.isHidden = panelOpacity <= 0.001
-        let textColor = resolvedPanelTextColor()
-        indicatorView.alphaValue = 1
-        indicatorView.configure(color: textColor, opacity: panelTextOpacity)
-        indicatorWidthConstraint?.constant = CGFloat(panelFontSize)
-        indicatorHeightConstraint?.constant = CGFloat(panelFontSize)
+        let materialAppearance = backgroundView.effectiveAppearance
+        textView.appearance = materialAppearance
+        indicatorView.appearance = materialAppearance
 
-        let font = NSFont.systemFont(ofSize: CGFloat(panelFontSize))
-        let color = textColor.withAlphaComponent(CGFloat(panelTextOpacity))
-        textView.font = font
-        textView.textColor = color
-        if renderMarkdown {
-            textView.textStorage?.setAttributedString(
-                MarkdownRenderer.render(currentText, font: font, color: color)
-            )
-        } else {
-            // 流式增量帧：纯文本，跳过每 token 的 Markdown 解析开销。
-            textView.textStorage?.setAttributedString(
-                NSAttributedString(string: currentText, attributes: [.font: font, .foregroundColor: color])
-            )
+        // HUD 材质在不同 macOS 版本上可能采用不同的明暗外观。正文不是
+        // backgroundView 的子视图（否则背景透明度会连带压低文字透明度），
+        // 因此必须显式在材质外观中解析系统颜色，避免 Sequoia 上出现
+        // 深色 HUD 配浅色 Aqua 的黑字，模型已返回但肉眼看不到。
+        materialAppearance.performAsCurrentDrawingAppearance {
+            let textColor = resolvedPanelTextColor()
+            indicatorView.alphaValue = 1
+            indicatorView.configure(color: textColor, opacity: panelTextOpacity)
+            indicatorWidthConstraint?.constant = CGFloat(panelFontSize)
+            indicatorHeightConstraint?.constant = CGFloat(panelFontSize)
+
+            let font = NSFont.systemFont(ofSize: CGFloat(panelFontSize))
+            let color = textColor.withAlphaComponent(CGFloat(panelTextOpacity))
+            textView.font = font
+            textView.textColor = color
+            if renderMarkdown {
+                textView.textStorage?.setAttributedString(
+                    MarkdownRenderer.render(currentText, font: font, color: color)
+                )
+            } else {
+                // 流式增量帧：纯文本，跳过每 token 的 Markdown 解析开销。
+                textView.textStorage?.setAttributedString(
+                    NSAttributedString(string: currentText, attributes: [.font: font, .foregroundColor: color])
+                )
+            }
         }
     }
 
