@@ -65,28 +65,39 @@ actor LLMClient {
         mimeType: String = "image/png",
         onEvent: (@Sendable (LLMStreamEvent) -> Void)? = nil
     ) async throws -> String {
-        let imageURL = "data:\(mimeType);base64,\(imageData.base64EncodedString())"
-        let body = makeBody(
-            input: [
-                [
-                    "role": "user",
-                    "content": [
-                        [
-                            "type": "input_text",
-                            "text": config.prompt
-                        ],
-                        [
-                            "type": "input_image",
-                            "image_url": imageURL
-                        ]
-                    ]
-                ]
-            ]
-        )
-        return try await perform(body: body, onEvent: onEvent)
+        try await analyze(imageDataList: [imageData], mimeType: mimeType, onEvent: onEvent)
     }
 
-    private func makeBody(input: [[String: Any]]) -> [String: Any] {
+    func analyze(
+        imageDataList: [Data],
+        mimeType: String = "image/png",
+        onEvent: (@Sendable (LLMStreamEvent) -> Void)? = nil
+    ) async throws -> String {
+        guard !imageDataList.isEmpty else {
+            throw AppError.configuration("至少需要一张截图。")
+        }
+        return try await perform(
+            body: Self.makeRequestBody(config: config, imageDataList: imageDataList, mimeType: mimeType),
+            onEvent: onEvent
+        )
+    }
+
+    nonisolated static func makeRequestBody(
+        config: AppConfig,
+        imageDataList: [Data],
+        mimeType: String
+    ) -> [String: Any] {
+        var content: [[String: Any]] = [["type": "input_text", "text": config.prompt]]
+        content.append(contentsOf: imageDataList.map { imageData in
+            [
+                "type": "input_image",
+                "image_url": "data:\(mimeType);base64,\(imageData.base64EncodedString())"
+            ]
+        })
+        return makeBody(config: config, input: [["role": "user", "content": content]])
+    }
+
+    nonisolated private static func makeBody(config: AppConfig, input: [[String: Any]]) -> [String: Any] {
         var body: [String: Any] = [
             "model": config.model,
             "store": false,
