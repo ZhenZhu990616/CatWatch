@@ -25,7 +25,7 @@ struct AppConfig {
     }
 }
 
-struct ConfigDraft {
+struct ConfigDraft: Equatable {
     var model: String
     var thinkingEnabled: Bool
     var reasoningEffort: ReasoningEffort
