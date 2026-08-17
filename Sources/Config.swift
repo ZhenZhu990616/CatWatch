@@ -582,41 +582,41 @@ enum ServiceTier: String, CaseIterable, Identifiable {
 }
 
 private enum Keys {
-    static let model = "screenLLM.model"
-    static let thinkingEnabled = "screenLLM.thinkingEnabled"
-    static let reasoningEffort = "screenLLM.reasoningEffort"
-    static let reasoningSummary = "screenLLM.reasoningSummary"
-    static let textVerbosity = "screenLLM.textVerbosity"
-    static let serviceTier = "screenLLM.serviceTier"
-    static let maxOutputTokens = "screenLLM.maxOutputTokens"
-    static let outputDisplayMode = "screenLLM.outputDisplayMode"
-    static let touchBarFontSize = "screenLLM.touchBarFontSize"
-    static let touchBarTextColor = "screenLLM.touchBarTextColor"
-    static let touchBarTextIntensity = "screenLLM.touchBarTextIntensity"
-    static let touchBarTextAlignment = "screenLLM.touchBarTextAlignment"
-    static let prompt = "screenLLM.prompt"
-    static let instructions = "screenLLM.instructions"
-    static let hotKey = "screenLLM.hotKey"
-    static let selectionHotKey = "screenLLM.selectionHotKey"
-    static let panelHotKey = "screenLLM.panelHotKey"
-    static let captureRegionHotKey = "screenLLM.captureRegionHotKey"
-    static let batchCaptureHotKey = "screenLLM.batchCaptureHotKey"
-    static let captureRegionShortcutMigrationVersion = "screenLLM.captureRegionShortcutMigrationVersion"
-    static let maxImageEdge = "screenLLM.maxImageEdge"
-    static let captureRegionEnabled = "screenLLM.captureRegionEnabled"
-    static let captureRegionX = "screenLLM.captureRegionX"
-    static let captureRegionY = "screenLLM.captureRegionY"
-    static let captureRegionWidth = "screenLLM.captureRegionWidth"
-    static let captureRegionHeight = "screenLLM.captureRegionHeight"
-    static let panelOpacity = "screenLLM.panelOpacity"
-    static let panelTextOpacity = "screenLLM.panelTextOpacity"
-    static let panelTextColor = "screenLLM.panelTextColor"
-    static let panelFontSize = "screenLLM.panelFontSize"
-    static let panelWidth = "screenLLM.panelWidth"
-    static let panelHeight = "screenLLM.panelHeight"
-    static let panelOriginX = "screenLLM.panelOriginX"
-    static let panelOriginY = "screenLLM.panelOriginY"
-    static let shortcutDefaultsMigrationVersion = "screenLLM.shortcutDefaultsMigrationVersion"
+    static let model = "catGPT.model"
+    static let thinkingEnabled = "catGPT.thinkingEnabled"
+    static let reasoningEffort = "catGPT.reasoningEffort"
+    static let reasoningSummary = "catGPT.reasoningSummary"
+    static let textVerbosity = "catGPT.textVerbosity"
+    static let serviceTier = "catGPT.serviceTier"
+    static let maxOutputTokens = "catGPT.maxOutputTokens"
+    static let outputDisplayMode = "catGPT.outputDisplayMode"
+    static let touchBarFontSize = "catGPT.touchBarFontSize"
+    static let touchBarTextColor = "catGPT.touchBarTextColor"
+    static let touchBarTextIntensity = "catGPT.touchBarTextIntensity"
+    static let touchBarTextAlignment = "catGPT.touchBarTextAlignment"
+    static let prompt = "catGPT.prompt"
+    static let instructions = "catGPT.instructions"
+    static let hotKey = "catGPT.hotKey"
+    static let selectionHotKey = "catGPT.selectionHotKey"
+    static let panelHotKey = "catGPT.panelHotKey"
+    static let captureRegionHotKey = "catGPT.captureRegionHotKey"
+    static let batchCaptureHotKey = "catGPT.batchCaptureHotKey"
+    static let captureRegionShortcutMigrationVersion = "catGPT.captureRegionShortcutMigrationVersion"
+    static let maxImageEdge = "catGPT.maxImageEdge"
+    static let captureRegionEnabled = "catGPT.captureRegionEnabled"
+    static let captureRegionX = "catGPT.captureRegionX"
+    static let captureRegionY = "catGPT.captureRegionY"
+    static let captureRegionWidth = "catGPT.captureRegionWidth"
+    static let captureRegionHeight = "catGPT.captureRegionHeight"
+    static let panelOpacity = "catGPT.panelOpacity"
+    static let panelTextOpacity = "catGPT.panelTextOpacity"
+    static let panelTextColor = "catGPT.panelTextColor"
+    static let panelFontSize = "catGPT.panelFontSize"
+    static let panelWidth = "catGPT.panelWidth"
+    static let panelHeight = "catGPT.panelHeight"
+    static let panelOriginX = "catGPT.panelOriginX"
+    static let panelOriginY = "catGPT.panelOriginY"
+    static let shortcutDefaultsMigrationVersion = "catGPT.shortcutDefaultsMigrationVersion"
 }
 
 struct PromptPreset: Codable, Identifiable, Equatable {
@@ -627,7 +627,7 @@ struct PromptPreset: Codable, Identifiable, Equatable {
 
 /// 提示词预设：JSON 存 UserDefaults，首次运行内置三条常用预设。
 enum PromptPresetStore {
-    private static let key = "screenLLM.promptPresets"
+    private static let key = "catGPT.promptPresets"
 
     static func load() -> [PromptPreset] {
         if let data = UserDefaults.standard.data(forKey: key),
@@ -654,11 +654,11 @@ enum PromptPresetStore {
 }
 
 enum KeychainStore {
-    private static let service = "ScreenLLMAssistant"
+    private static let service = "CatGPT"
     private static let codexAccount = "CODEX_OAUTH_CREDENTIALS"
     /// 所有异步写操作走同一条串行队列，保证"登出删除"和"刷新保存"
     /// 按发起顺序落盘，不会出现登出后旧的保存任务把凭证写回去。
-    private static let writeQueue = DispatchQueue(label: "CatWatch.KeychainStore")
+    private static let writeQueue = DispatchQueue(label: "CatGPT.KeychainStore")
 
     static func saveCodexCredentialsAsync(_ credentials: CodexOAuthCredentials) {
         writeQueue.async {

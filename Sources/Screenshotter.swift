@@ -18,12 +18,12 @@ enum Screenshotter {
         }
     }
 
-    /// 统一截图入口：macOS 14+ 走 ScreenCaptureKit（GPU 管线、排除自家窗口），
-    /// 旧系统回退 CGDisplayCreateImage；重活（截取、合成、编码）都在后台执行。
+    /// 统一截图入口：走 ScreenCaptureKit（GPU 管线、排除自家窗口）；
+    /// 重活（截取、合成、编码）都在后台执行。
     /// 输出 JPEG——对视觉模型识别质量几乎无损，但体积比 PNG 小数倍，上传明显提速。
     static func captureImageData(maxEdge: Int, region: CGRect? = nil) async throws -> Data {
         guard CGPreflightScreenCaptureAccess() else {
-            throw AppError.screenshot("需要授予 CatWatch 屏幕录制权限。请点击菜单里的“权限”，在系统设置中启用后重新打开应用。")
+            throw AppError.screenshot("需要授予 CatGPT 屏幕录制权限。请点击菜单里的“权限”，在系统设置中启用后重新打开应用。")
         }
 
         // NSScreen 属主线程 API，先在主线程取好 Cocoa 坐标系的屏幕范围。
@@ -33,15 +33,9 @@ enum Screenshotter {
                 .reduce(CGRect.null) { $0.union($1) }
         }
 
-        var image: CGImage
-        let capturedUnion: CGRect
-        if #available(macOS 14.0, *) {
-            (image, capturedUnion) = try await SCKScreenshotter.captureAllDisplaysImage()
-        } else {
-            (image, capturedUnion) = try await Task.detached(priority: .userInitiated) {
-                try captureAllDisplaysLegacy()
-            }.value
-        }
+        let captured = try await SCKScreenshotter.captureAllDisplaysImage()
+        var image = captured.image
+        let capturedUnion = captured.union
 
         if let region {
             // screenUnion(NSScreen, 主线程预读) 与 capturedUnion(捕获时枚举) 是两次独立
@@ -113,27 +107,6 @@ enum Screenshotter {
         }
 
         return (image, union)
-    }
-
-    private static func captureAllDisplaysLegacy() throws -> (image: CGImage, union: CGRect) {
-        var displayCount: UInt32 = 0
-        var result = CGGetActiveDisplayList(0, nil, &displayCount)
-        guard result == .success, displayCount > 0 else {
-            throw AppError.screenshot("没有找到可用显示器。")
-        }
-
-        var displays = [CGDirectDisplayID](repeating: 0, count: Int(displayCount))
-        result = CGGetActiveDisplayList(displayCount, &displays, &displayCount)
-        guard result == .success else {
-            throw AppError.screenshot("无法读取显示器列表。")
-        }
-
-        // 截取失败的显示器保留 frame（image 为 nil），维持 union 几何完整。
-        let entries: [(frame: CGRect, image: CGImage?)] = displays.map { display in
-            (CGDisplayBounds(display), CGDisplayCreateImage(display))
-        }
-
-        return try compose(entries)
     }
 
     private static func crop(_ image: CGImage, to region: CGRect, screenUnion union: CGRect) throws -> CGImage {

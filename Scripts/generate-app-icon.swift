@@ -69,15 +69,47 @@ private func drawIcon(in rect: NSRect, scale: CGFloat) {
     }
 
     let cat = CGMutablePath()
-    cat.move(to: point(15, 105))
+    // Keep the white body inside the black rounded square with a small bottom margin.
+    cat.move(to: point(15, 97))
     cat.addLine(to: point(20, 35))
     cat.addLine(to: point(38, 60))
     cat.addQuadCurve(to: point(62, 60), control: point(50, 52))
     cat.addLine(to: point(80, 35))
-    cat.addLine(to: point(85, 105))
+    cat.addLine(to: point(85, 97))
     cat.closeSubpath()
 
     context.setFillColor(NSColor.white.cgColor)
     context.addPath(cat)
     context.fillPath()
+
+    let pointsPerUnit = iconRect.width / 100
+    context.setStrokeColor(NSColor.black.cgColor)
+    context.setLineCap(.round)
+    context.setLineJoin(.round)
+
+    let mouth = CGMutablePath()
+    mouth.move(to: point(46, 76))
+    mouth.addQuadCurve(to: point(54, 76), control: point(50, 79))
+    context.setLineWidth(2.6 * pointsPerUnit)
+    context.addPath(mouth)
+    context.strokePath()
+
+    let mouthStem = CGMutablePath()
+    mouthStem.move(to: point(50, 79))
+    mouthStem.addLine(to: point(50, 82))
+    context.addPath(mouthStem)
+    context.strokePath()
+
+    let whiskers = CGMutablePath()
+    whiskers.move(to: point(24, 72))
+    whiskers.addLine(to: point(41, 75))
+    whiskers.move(to: point(22, 78))
+    whiskers.addLine(to: point(41, 78))
+    whiskers.move(to: point(76, 72))
+    whiskers.addLine(to: point(59, 75))
+    whiskers.move(to: point(78, 78))
+    whiskers.addLine(to: point(59, 78))
+    context.setLineWidth(2.25 * pointsPerUnit)
+    context.addPath(whiskers)
+    context.strokePath()
 }

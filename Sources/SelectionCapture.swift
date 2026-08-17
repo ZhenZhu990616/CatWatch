@@ -5,10 +5,6 @@ enum SelectionCapture {
     @MainActor
     static func captureImageData(maxEdge: Int) async throws -> Data {
         let region = try await SelectionOverlayController.selectRect()
-        if #unavailable(macOS 14.0) {
-            // 旧截屏路径无法排除自家窗口，只能等蒙层真正消失后再截。
-            try? await Task.sleep(nanoseconds: 90_000_000)
-        }
         try Task.checkCancellation()
         return try await Screenshotter.captureImageData(maxEdge: maxEdge, region: region)
     }

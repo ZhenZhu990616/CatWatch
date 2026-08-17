@@ -1,5 +1,5 @@
 import XCTest
-@testable import CatWatch
+@testable import CatGPT
 
 @MainActor
 final class ShortcutSettingsTests: XCTestCase {
@@ -30,7 +30,7 @@ final class ShortcutSettingsTests: XCTestCase {
         model.setShortcut(initial.selectionHotKeyText, at: \ConfigDraft.hotKeyText, field: .captureShortcut)
 
         XCTAssertEqual(model.draft.hotKeyText, initial.hotKeyText)
-        XCTAssertEqual(model.error(for: .captureShortcut), "不能与其他 CatWatch 快捷键重复。")
+        XCTAssertEqual(model.error(for: .captureShortcut), "不能与其他 CatGPT 快捷键重复。")
     }
 
     func testCaptureRegionShortcutCannotDuplicateAnotherShortcut() {
@@ -46,7 +46,7 @@ final class ShortcutSettingsTests: XCTestCase {
         )
 
         XCTAssertEqual(model.draft.captureRegionHotKeyText, initial.captureRegionHotKeyText)
-        XCTAssertEqual(model.error(for: .captureRegionShortcut), "不能与其他 CatWatch 快捷键重复。")
+        XCTAssertEqual(model.error(for: .captureRegionShortcut), "不能与其他 CatGPT 快捷键重复。")
     }
 
     func testBatchCaptureShortcutCannotDuplicateAnotherShortcut() {
@@ -56,7 +56,7 @@ final class ShortcutSettingsTests: XCTestCase {
         model.setShortcut(initial.hotKeyText, at: \ConfigDraft.batchCaptureHotKeyText, field: .batchCaptureShortcut)
 
         XCTAssertEqual(model.draft.batchCaptureHotKeyText, initial.batchCaptureHotKeyText)
-        XCTAssertEqual(model.error(for: .batchCaptureShortcut), "不能与其他 CatWatch 快捷键重复。")
+        XCTAssertEqual(model.error(for: .batchCaptureShortcut), "不能与其他 CatGPT 快捷键重复。")
     }
 
     func testResetShortcutsRestoresCaptureRegionShortcutDefault() {

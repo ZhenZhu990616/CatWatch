@@ -1,5 +1,6 @@
 .DS_Store
 .tmp-*.png
+.superpowers/
 .vscode/
 .worktrees/
 .build/

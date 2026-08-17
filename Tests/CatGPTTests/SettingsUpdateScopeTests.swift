@@ -1,5 +1,5 @@
 import XCTest
-@testable import CatWatch
+@testable import CatGPT
 
 final class SettingsUpdateScopeTests: XCTestCase {
     private var base = ConfigDraft.load()

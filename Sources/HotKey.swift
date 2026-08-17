@@ -43,6 +43,9 @@ struct HotKey {
             case "shift", "⇧":
                 modifiers |= UInt32(shiftKey)
             default:
+                guard keyToken == nil else {
+                    throw AppError.hotKey("快捷键只能包含一个主按键。")
+                }
                 keyToken = token
             }
         }

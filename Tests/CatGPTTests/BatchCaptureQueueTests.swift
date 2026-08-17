@@ -1,5 +1,5 @@
 import XCTest
-@testable import CatWatch
+@testable import CatGPT
 
 @MainActor
 final class BatchCaptureQueueTests: XCTestCase {

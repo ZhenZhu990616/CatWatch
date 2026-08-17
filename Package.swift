@@ -3,25 +3,25 @@
 import PackageDescription
 
 let package = Package(
-    name: "CatWatch",
+    name: "CatGPT",
     platforms: [
-        .macOS(.v13)
+        .macOS(.v14)
     ],
     products: [
         .executable(
-            name: "CatWatch",
-            targets: ["CatWatch"]
+            name: "CatGPT",
+            targets: ["CatGPT"]
         )
     ],
     targets: [
         .executableTarget(
-            name: "CatWatch",
+            name: "CatGPT",
             path: "Sources"
         ),
         .testTarget(
-            name: "CatWatchTests",
-            dependencies: ["CatWatch"],
-            path: "Tests/CatWatchTests"
+            name: "CatGPTTests",
+            dependencies: ["CatGPT"],
+            path: "Tests/CatGPTTests"
         )
     ]
 )

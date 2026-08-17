@@ -338,7 +338,7 @@ enum SettingsValidationError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .duplicateShortcut:
-            return "不能与其他 CatWatch 快捷键重复。"
+            return "不能与其他 CatGPT 快捷键重复。"
         }
     }
 }

@@ -157,7 +157,7 @@ final class CodexOAuthClient {
 
 private final class LocalOAuthCallbackServer: @unchecked Sendable {
     private let expectedState: String
-    private let queue = DispatchQueue(label: "CatWatch.CodexOAuth")
+    private let queue = DispatchQueue(label: "CatGPT.CodexOAuth")
     private let listener: NWListener
     private var continuation: CheckedContinuation<String, Error>?
     private var pendingResult: Result<String, Error>?

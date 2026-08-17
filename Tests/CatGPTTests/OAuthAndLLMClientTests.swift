@@ -1,5 +1,5 @@
 import XCTest
-@testable import CatWatch
+@testable import CatGPT
 
 final class OAuthAndLLMClientTests: XCTestCase {
     func testNeedsRefreshUsesSixtySecondBuffer() {
@@ -66,7 +66,7 @@ final class OAuthAndLLMClientTests: XCTestCase {
 
     func testLLMClientRefreshesAfter401AndEmitsStreamingEvents() async throws {
         let recorder = EventRecorder()
-        var refreshCallCount = 0
+        let refreshCallCount = LockedCounter()
         let session = makeSession(
             responses: [
                 .http(statusCode: 401, body: #"{"error":"invalid_token"}"#),
@@ -86,7 +86,7 @@ final class OAuthAndLLMClientTests: XCTestCase {
             session: session,
             onCredentialsRefreshed: { _ in },
             refreshCredentials: { credentials in
-                refreshCallCount += 1
+                refreshCallCount.increment()
                 return CodexOAuthCredentials(
                     access: "refreshed-access",
                     refresh: credentials.refresh,
@@ -99,7 +99,7 @@ final class OAuthAndLLMClientTests: XCTestCase {
         let result = try await client.analyze(imageData: Data([0x01])) { recorder.record($0) }
 
         XCTAssertEqual(result, "Hello!")
-        XCTAssertEqual(refreshCallCount, 1)
+        XCTAssertEqual(refreshCallCount.value, 1)
         XCTAssertEqual(StubURLProtocol.requestCount, 2)
         XCTAssertEqual(recorder.events, [.connected, .reasoning, .delta("Hel"), .delta("Hello")])
     }
@@ -198,6 +198,23 @@ private final class EventRecorder: @unchecked Sendable {
     func record(_ event: LLMStreamEvent) {
         lock.lock()
         events.append(event)
+        lock.unlock()
+    }
+}
+
+private final class LockedCounter: @unchecked Sendable {
+    private let lock = NSLock()
+    private var storage = 0
+
+    var value: Int {
+        lock.lock()
+        defer { lock.unlock() }
+        return storage
+    }
+
+    func increment() {
+        lock.lock()
+        storage += 1
         lock.unlock()
     }
 }

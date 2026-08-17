@@ -1,12 +1,12 @@
-# CatWatch Settings Redesign Implementation Plan
+# CatGPT Settings Redesign Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** 将 CatWatch 设置窗口重构为已确认的原生 macOS 分栏卡片界面，并以经过验证、按作用域应用的即时保存替代手动保存。
+**Goal:** 将 CatGPT 设置窗口重构为已确认的原生 macOS 分栏卡片界面，并以经过验证、按作用域应用的即时保存替代手动保存。
 
 **Architecture:** 继续使用 AppKit 窗口承载 SwiftUI，但把窗口、状态模型、通用组件、五个页面和快捷键录制器拆为独立文件。`SettingsViewModel` 同时维护编辑草稿与最后应用草稿，文本输入经过 300 ms 去抖；`SettingsApplication` 在设置持久化之前只调用相关运行时动作，并在快捷键应用失败时恢复旧配置。
 
-**Tech Stack:** Swift 5.9、SwiftUI、AppKit、ServiceManagement、Carbon、XCTest、Swift Package Manager，最低系统 macOS 13.0。
+**Tech Stack:** Swift 5.9、SwiftUI、AppKit、ServiceManagement、Carbon、XCTest、Swift Package Manager，最低系统 macOS 14.0。
 
 ---
 
@@ -15,7 +15,7 @@
 当前主工作区已有两项经过测试、尚未提交的 macOS 15 回答文字兼容修复：
 
 - `Sources/main.swift`
-- `Tests/CatWatchTests/ResultPanelCompatibilityTests.swift`
+- `Tests/CatGPTTests/ResultPanelCompatibilityTests.swift`
 
 执行本计划前先把这两项作为独立提交保留下来；不得把 `.superpowers/` 视觉原型加入 Git。随后从包含该修复和本计划的提交创建独立工作树。建议工作树路径为 `.worktrees/settings-redesign`，分支为 `codex/settings-redesign`。
 
@@ -37,16 +37,16 @@
 - Create: `Sources/Settings/ShortcutRecorder.swift` — `NSViewRepresentable` 和 AppKit 录制按钮。
 - Modify: `Sources/main.swift` — 将统一 `reloadRuntime()` 拆为外观、快捷键、客户端和纯存储入口。
 - Delete: `Sources/SettingsWindowController.swift` — 所有职责迁移完成后删除旧的 1100 行单文件实现。
-- Create: `Tests/CatWatchTests/SettingsUpdateScopeTests.swift` — 字段到作用域的映射回归。
-- Create: `Tests/CatWatchTests/SettingsViewModelTests.swift` — 即时保存、文本去抖和无效值行为。
-- Create: `Tests/CatWatchTests/SettingsApplicationTests.swift` — 运行时隔离和失败回滚。
-- Create: `Tests/CatWatchTests/ShortcutSettingsTests.swift` — 格式错误、重复和注册失败回退。
+- Create: `Tests/CatGPTTests/SettingsUpdateScopeTests.swift` — 字段到作用域的映射回归。
+- Create: `Tests/CatGPTTests/SettingsViewModelTests.swift` — 即时保存、文本去抖和无效值行为。
+- Create: `Tests/CatGPTTests/SettingsApplicationTests.swift` — 运行时隔离和失败回滚。
+- Create: `Tests/CatGPTTests/ShortcutSettingsTests.swift` — 格式错误、重复和注册失败回退。
 
 ### Task 1: 固化现有 macOS 15 修复并建立隔离工作树
 
 **Files:**
 - Modify: `Sources/main.swift`
-- Create: `Tests/CatWatchTests/ResultPanelCompatibilityTests.swift`
+- Create: `Tests/CatGPTTests/ResultPanelCompatibilityTests.swift`
 - Ignore: `.superpowers/`
 
 - [ ] **Step 1: 复验已有兼容修复**
@@ -64,7 +64,7 @@ Expected: PASS；回答 `NSTextView` 的有效外观与 HUD `NSVisualEffectView`
 Run:
 
 ```bash
-git add Sources/main.swift Tests/CatWatchTests/ResultPanelCompatibilityTests.swift
+git add Sources/main.swift Tests/CatGPTTests/ResultPanelCompatibilityTests.swift
 git diff --cached --check
 git commit -m "fix: keep result text visible on macOS 15"
 ```
@@ -86,15 +86,15 @@ Expected: 新工作树从包含兼容修复、设计规格和本计划的提交�
 **Files:**
 - Modify: `Sources/Config.swift:28`
 - Create: `Sources/Settings/SettingsUpdateScope.swift`
-- Test: `Tests/CatWatchTests/SettingsUpdateScopeTests.swift`
+- Test: `Tests/CatGPTTests/SettingsUpdateScopeTests.swift`
 
 - [ ] **Step 1: 写作用域映射失败测试**
 
-Create `Tests/CatWatchTests/SettingsUpdateScopeTests.swift`:
+Create `Tests/CatGPTTests/SettingsUpdateScopeTests.swift`:
 
 ```swift
 import XCTest
-@testable import CatWatch
+@testable import CatGPT
 
 final class SettingsUpdateScopeTests: XCTestCase {
     private var base: ConfigDraft { ConfigDraft.load() }
@@ -214,7 +214,7 @@ Run:
 
 ```bash
 swift test --filter SettingsUpdateScopeTests
-git add Sources/Config.swift Sources/Settings/SettingsUpdateScope.swift Tests/CatWatchTests/SettingsUpdateScopeTests.swift
+git add Sources/Config.swift Sources/Settings/SettingsUpdateScope.swift Tests/CatGPTTests/SettingsUpdateScopeTests.swift
 git commit -m "refactor: classify settings update scopes"
 ```
 
@@ -225,17 +225,17 @@ Expected: 5 个测试全部 PASS。
 **Files:**
 - Create: `Sources/Settings/SettingsSection.swift`
 - Create: `Sources/Settings/SettingsViewModel.swift`
-- Test: `Tests/CatWatchTests/SettingsViewModelTests.swift`
-- Test: `Tests/CatWatchTests/ShortcutSettingsTests.swift`
+- Test: `Tests/CatGPTTests/SettingsViewModelTests.swift`
+- Test: `Tests/CatGPTTests/ShortcutSettingsTests.swift`
 - Modify: `Sources/SettingsWindowController.swift` — 删除旧 `SettingsState`、`SettingsViewModel`、关窗确认和 `SaveBar`，页面继续通过新模型编译。
 
 - [ ] **Step 1: 写即时保存和去抖失败测试**
 
-Create `Tests/CatWatchTests/SettingsViewModelTests.swift`:
+Create `Tests/CatGPTTests/SettingsViewModelTests.swift`:
 
 ```swift
 import XCTest
-@testable import CatWatch
+@testable import CatGPT
 
 @MainActor
 final class SettingsViewModelTests: XCTestCase {
@@ -300,11 +300,11 @@ final class SettingsViewModelTests: XCTestCase {
 
 - [ ] **Step 2: 写快捷键恢复失败测试**
 
-Create `Tests/CatWatchTests/ShortcutSettingsTests.swift`:
+Create `Tests/CatGPTTests/ShortcutSettingsTests.swift`:
 
 ```swift
 import XCTest
-@testable import CatWatch
+@testable import CatGPT
 
 @MainActor
 final class ShortcutSettingsTests: XCTestCase {
@@ -327,7 +327,7 @@ final class ShortcutSettingsTests: XCTestCase {
         model.setShortcut(initial.selectionHotKeyText, at: \ConfigDraft.hotKeyText, field: .captureShortcut)
 
         XCTAssertEqual(model.draft.hotKeyText, initial.hotKeyText)
-        XCTAssertEqual(model.error(for: .captureShortcut), "不能与其他 CatWatch 快捷键重复。")
+        XCTAssertEqual(model.error(for: .captureShortcut), "不能与其他 CatGPT 快捷键重复。")
     }
 
     func testRegistrationFailureRestoresLastAppliedValue() {
@@ -585,7 +585,7 @@ enum SettingsValidationError: LocalizedError {
 
     var errorDescription: String? {
         switch self {
-        case .duplicateShortcut: return "不能与其他 CatWatch 快捷键重复。"
+        case .duplicateShortcut: return "不能与其他 CatGPT 快捷键重复。"
         }
     }
 }
@@ -749,7 +749,7 @@ Expected: 两组新测试全部 PASS；旧页面在替换为 `model.binding`、`
 Run:
 
 ```bash
-git add Sources/Settings/SettingsSection.swift Sources/Settings/SettingsViewModel.swift Sources/SettingsWindowController.swift Tests/CatWatchTests/SettingsViewModelTests.swift Tests/CatWatchTests/ShortcutSettingsTests.swift
+git add Sources/Settings/SettingsSection.swift Sources/Settings/SettingsViewModel.swift Sources/SettingsWindowController.swift Tests/CatGPTTests/SettingsViewModelTests.swift Tests/CatGPTTests/ShortcutSettingsTests.swift
 git commit -m "feat: apply settings changes immediately"
 ```
 
@@ -758,15 +758,15 @@ git commit -m "feat: apply settings changes immediately"
 **Files:**
 - Create: `Sources/Settings/SettingsApplication.swift`
 - Modify: `Sources/main.swift:289-405,664-706`
-- Test: `Tests/CatWatchTests/SettingsApplicationTests.swift`
+- Test: `Tests/CatGPTTests/SettingsApplicationTests.swift`
 
 - [ ] **Step 1: 写隔离和回滚失败测试**
 
-Create `Tests/CatWatchTests/SettingsApplicationTests.swift`:
+Create `Tests/CatGPTTests/SettingsApplicationTests.swift`:
 
 ```swift
 import XCTest
-@testable import CatWatch
+@testable import CatGPT
 
 final class SettingsApplicationTests: XCTestCase {
     func testAppearanceDoesNotTouchShortcutsOrClient() throws {
@@ -973,7 +973,7 @@ Run:
 ```bash
 swift test --filter SettingsApplicationTests
 swift test
-git add Sources/main.swift Sources/Settings/SettingsApplication.swift Sources/SettingsWindowController.swift Tests/CatWatchTests/SettingsApplicationTests.swift
+git add Sources/main.swift Sources/Settings/SettingsApplication.swift Sources/SettingsWindowController.swift Tests/CatGPTTests/SettingsApplicationTests.swift
 git commit -m "refactor: isolate settings runtime updates"
 ```
 
@@ -1024,7 +1024,7 @@ final class SettingsWindowController: NSWindowController {
             backing: .buffered,
             defer: false
         )
-        window.title = "CatWatch 设置"
+        window.title = "CatGPT 设置"
         window.minSize = NSSize(width: 760, height: 520)
         window.tabbingMode = .disallowed
         window.toolbarStyle = .unified
@@ -1038,10 +1038,10 @@ final class SettingsWindowController: NSWindowController {
 
         super.init(window: window)
 
-        if !window.setFrameUsingName("CatWatchSettings") {
+        if !window.setFrameUsingName("CatGPTSettings") {
             window.center()
         }
-        window.setFrameAutosaveName("CatWatchSettings")
+        window.setFrameAutosaveName("CatGPTSettings")
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
@@ -1131,7 +1131,7 @@ private struct SidebarRow: View {
 }
 ```
 
-`SidebarRow` 使用单色 SF Symbol 与系统强调色，不绘制彩色图标磁贴；侧栏顶部不得添加 “CatWatch” 文本。
+`SidebarRow` 使用单色 SF Symbol 与系统强调色，不绘制彩色图标磁贴；侧栏顶部不得添加 “CatGPT” 文本。
 
 - [ ] **Step 3: 创建共享卡片组件**
 
@@ -1292,10 +1292,10 @@ Run:
 
 ```bash
 swift build
-CATWATCH_OPEN_SETTINGS=shortcuts swift run CatWatch
+CATGPT_OPEN_SETTINGS=shortcuts swift run CatGPT
 ```
 
-Expected: 窗口标题固定为“CatWatch 设置”；侧栏没有品牌标题，宽度约 160 pt；详情内容随窗口铺满且无底部保存栏。关闭应用后提交：
+Expected: 窗口标题固定为“CatGPT 设置”；侧栏没有品牌标题，宽度约 160 pt；详情内容随窗口铺满且无底部保存栏。关闭应用后提交：
 
 ```bash
 git add Sources/Settings Sources/SettingsWindowController.swift
@@ -1444,8 +1444,8 @@ Run:
 
 ```bash
 swift build
-CATWATCH_OPEN_SETTINGS=shortcuts swift run CatWatch
-CATWATCH_OPEN_SETTINGS=prompt swift run CatWatch
+CATGPT_OPEN_SETTINGS=shortcuts swift run CatGPT
+CATGPT_OPEN_SETTINGS=prompt swift run CatGPT
 ```
 
 Expected: 卡片铺满详情宽度；快捷键错误显示在对应行；提示词停止输入约 300 ms 后应用；没有保存按钮。
@@ -1465,7 +1465,7 @@ git commit -m "feat: redesign workflow settings"
 - Create: `Sources/Settings/ModelSettingsView.swift`
 - Modify: `Sources/Settings/SettingsRootView.swift`
 - Modify: `Sources/SettingsWindowController.swift` — 删除旧模型页。
-- Modify: `Tests/CatWatchTests/SettingsViewModelTests.swift`
+- Modify: `Tests/CatGPTTests/SettingsViewModelTests.swift`
 
 - [ ] **Step 1: 增加数字归一化测试**
 
@@ -1529,8 +1529,8 @@ Run:
 ```bash
 swift test --filter SettingsViewModelTests
 swift build
-CATWATCH_OPEN_SETTINGS=model swift run CatWatch
-git add Sources/Settings Sources/SettingsWindowController.swift Tests/CatWatchTests/SettingsViewModelTests.swift
+CATGPT_OPEN_SETTINGS=model swift run CatGPT
+git add Sources/Settings Sources/SettingsWindowController.swift Tests/CatGPTTests/SettingsViewModelTests.swift
 git commit -m "feat: redesign model settings"
 ```
 
@@ -1584,7 +1584,7 @@ Run:
 
 ```bash
 swift build
-CATWATCH_OPEN_SETTINGS=appearance swift run CatWatch
+CATGPT_OPEN_SETTINGS=appearance swift run CatGPT
 git add Sources/Settings Sources/SettingsWindowController.swift
 git commit -m "feat: redesign appearance settings"
 ```
@@ -1600,7 +1600,7 @@ Expected: 拖动滑块时输出视图立即更新，既不重新注册快捷键�
 
 - [ ] **Step 1: 实现四张服务卡片**
 
-创建 `ServiceSettingsView`，页面标题“服务”，说明“管理账号、系统权限和 CatWatch 的运行状态。”，完整包含：
+创建 `ServiceSettingsView`，页面标题“服务”，说明“管理账号、系统权限和 CatGPT 的运行状态。”，完整包含：
 
 - `Codex 账号`：登录状态、登录/重新登录、退出登录。
 - `权限`：屏幕录制授权状态与“打开系统设置…”。
@@ -1634,8 +1634,8 @@ Expected: 完整测试 PASS，旧 1100 行设置文件已删除。
 
 **Files:**
 - Verify: `Sources/Settings/*.swift`
-- Verify: `Tests/CatWatchTests/*.swift`
-- Generate locally: `.build/`, `dist/CatWatch.app`
+- Verify: `Tests/CatGPTTests/*.swift`
+- Generate locally: `.build/`, `dist/CatGPT.app`
 
 - [ ] **Step 1: 运行完整自动化验证**
 
@@ -1650,7 +1650,7 @@ Expected: `ConfigDefaultsTests`、`ResultPanelCompatibilityTests`、`SettingsUpd
 
 - [ ] **Step 2: 验证五个页面和三种窗口宽度**
 
-依次用 `CATWATCH_OPEN_SETTINGS=shortcuts|prompt|model|appearance|service` 启动。每页检查默认 `880×620`、最小 `760×520` 和放大窗口；确认侧栏范围为 `148/160/176`，右侧卡片铺满内容区、没有横向裁切和底部保存栏。
+依次用 `CATGPT_OPEN_SETTINGS=shortcuts|prompt|model|appearance|service` 启动。每页检查默认 `880×620`、最小 `760×520` 和放大窗口；确认侧栏范围为 `148/160/176`，右侧卡片铺满内容区、没有横向裁切和底部保存栏。
 
 - [ ] **Step 3: 验证浅色、深色和提高对比度**
 
@@ -1666,10 +1666,10 @@ Run:
 
 ```bash
 Scripts/build-app.sh
-otool -l dist/CatWatch.app/Contents/MacOS/CatWatch | sed -n '/LC_BUILD_VERSION/,/sdk/p'
+otool -l dist/CatGPT.app/Contents/MacOS/CatGPT | sed -n '/LC_BUILD_VERSION/,/sdk/p'
 ```
 
-Expected: `minos 13.0`；app 可在 macOS 15.6.1 上打开设置并显示回答文字。
+Expected: `minos 14.0`；app 可在 macOS 15.6.1 上打开设置并显示回答文字。
 
 - [ ] **Step 6: 检查提交范围与工作树**
 

@@ -1,6 +1,6 @@
 import AppKit
 import XCTest
-@testable import CatWatch
+@testable import CatGPT
 
 final class ResultPanelCompatibilityTests: XCTestCase {
     @MainActor
@@ -94,6 +94,35 @@ final class ResultPanelCompatibilityTests: XCTestCase {
         let phaseView = try XCTUnwrap(firstSubview(of: PhaseIndicatorView.self, in: panel.contentView))
         XCTAssertTrue(batchView.isHidden)
         XCTAssertFalse(phaseView.isHidden)
+    }
+
+    @MainActor
+    func testFlushPendingFrameImmediatelyPersistsDebouncedMove() throws {
+        let controller = ResultPanelController()
+        controller.configure(
+            width: 240,
+            height: 120,
+            opacity: 0.94,
+            textOpacity: 1,
+            fontSize: 14,
+            textColor: .system,
+            originX: 17,
+            originY: 19
+        )
+        controller.show(text: "位置测试", kind: "ready")
+        let panel = try XCTUnwrap(NSApplication.shared.windows.last)
+
+        var saved: (Int, Int, Double, Double)?
+        controller.onFrameChanged = { saved = ($0, $1, $2, $3) }
+        var movedFrame = panel.frame
+        movedFrame.origin.x += 11
+        movedFrame.origin.y += 7
+        panel.setFrame(movedFrame, display: false)
+        controller.windowDidMove(Notification(name: NSWindow.didMoveNotification, object: panel))
+        controller.flushPendingFrame()
+
+        XCTAssertEqual(saved?.2, movedFrame.origin.x)
+        XCTAssertEqual(saved?.3, movedFrame.origin.y)
     }
 
     private func firstSubview<View: NSView>(of type: View.Type, in root: NSView?) -> View? {

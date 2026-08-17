@@ -1,8 +1,8 @@
-# CatWatch Floating Panel Release Implementation Plan
+# CatGPT Floating Panel Release Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Change CatWatch's first-launch floating panel to 520×320, preserve saved user sizes, then build, Developer ID-sign, package, and publish version 0.2.0 to a private GitHub repository.
+**Goal:** Change CatGPT's first-launch floating panel to 520×320, preserve saved user sizes, then build, Developer ID-sign, package, and publish version 0.2.0 to a private GitHub repository.
 
 **Architecture:** Keep the existing configuration data flow: `ConfigDraft` owns default dimensions, `UserDefaults` and environment variables retain precedence, and `FloatingResultPresenter` consumes the resolved values unchanged. Add a narrow Swift Package regression test, keep build products out of Git, create a signed DMG from the existing Release app bundle, and publish source plus the DMG as a GitHub Release.
 
@@ -41,7 +41,7 @@ Expected: source, scripts, documentation, and design assets are untracked; `.bui
 
 - [ ] **Step 3: Commit the source baseline**
 
-Run: `git add .gitignore Package.swift Sources Scripts README.md 猫主题应用图标设计 docs && git commit -m "chore: import CatWatch sources"`
+Run: `git add .gitignore Package.swift Sources Scripts README.md 猫主题应用图标设计 docs && git commit -m "chore: import CatGPT sources"`
 
 Expected: a commit containing the project source but no generated build products.
 
@@ -55,7 +55,7 @@ Expected: a clean worktree on `agent/floating-panel-release`.
 
 **Files:**
 - Modify: `Package.swift`
-- Create: `Tests/CatWatchTests/ConfigDefaultsTests.swift`
+- Create: `Tests/CatGPTTests/ConfigDefaultsTests.swift`
 
 - [ ] **Step 1: Register the XCTest target**
 
@@ -63,19 +63,19 @@ Add this target after the executable target:
 
 ```swift
 .testTarget(
-    name: "CatWatchTests",
-    dependencies: ["CatWatch"],
-    path: "Tests/CatWatchTests"
+    name: "CatGPTTests",
+    dependencies: ["CatGPT"],
+    path: "Tests/CatGPTTests"
 )
 ```
 
 - [ ] **Step 2: Write the failing test**
 
-Create `Tests/CatWatchTests/ConfigDefaultsTests.swift`:
+Create `Tests/CatGPTTests/ConfigDefaultsTests.swift`:
 
 ```swift
 import XCTest
-@testable import CatWatch
+@testable import CatGPT
 
 final class ConfigDefaultsTests: XCTestCase {
     func testFloatingPanelUsesReadableFirstLaunchSize() {
@@ -99,7 +99,7 @@ Expected: FAIL because the current defaults are 430×260 rather than 520×320.
 
 **Files:**
 - Modify: `Sources/Config.swift:95`
-- Test: `Tests/CatWatchTests/ConfigDefaultsTests.swift`
+- Test: `Tests/CatGPTTests/ConfigDefaultsTests.swift`
 
 - [ ] **Step 1: Apply the minimal production change**
 
@@ -124,13 +124,13 @@ Expected: all tests pass and the Release executable builds without errors.
 
 - [ ] **Step 4: Commit the behavior change**
 
-Run: `git add Package.swift Sources/Config.swift Tests/CatWatchTests/ConfigDefaultsTests.swift && git commit -m "feat: improve floating panel default size"`
+Run: `git add Package.swift Sources/Config.swift Tests/CatGPTTests/ConfigDefaultsTests.swift && git commit -m "feat: improve floating panel default size"`
 
 ### Task 4: Merge and create the signed release package
 
 **Files:**
-- Generate: `dist/CatWatch.app`
-- Generate: `dist/CatWatch-0.2.0-arm64.dmg`
+- Generate: `dist/CatGPT.app`
+- Generate: `dist/CatGPT-0.2.0-arm64.dmg`
 
 - [ ] **Step 1: Merge the verified feature branch into main**
 
@@ -146,14 +146,14 @@ Run:
 CODE_SIGN_IDENTITY="Developer ID Application: Zhen Zhu (JH83G4NL6Z)" Scripts/build-app.sh
 ```
 
-Expected: `dist/CatWatch.app` is signed with Team ID `JH83G4NL6Z` and hardened runtime.
+Expected: `dist/CatGPT.app` is signed with Team ID `JH83G4NL6Z` and hardened runtime.
 
 - [ ] **Step 3: Create and sign the DMG**
 
-Create a temporary staging directory with `mktemp -d`, copy `CatWatch.app`, add an `/Applications` symlink, create a compressed UDZO DMG with `hdiutil create`, then run:
+Create a temporary staging directory with `mktemp -d`, copy `CatGPT.app`, add an `/Applications` symlink, create a compressed UDZO DMG with `hdiutil create`, then run:
 
 ```bash
-codesign --force --timestamp --sign "Developer ID Application: Zhen Zhu (JH83G4NL6Z)" dist/CatWatch-0.2.0-arm64.dmg
+codesign --force --timestamp --sign "Developer ID Application: Zhen Zhu (JH83G4NL6Z)" dist/CatGPT-0.2.0-arm64.dmg
 ```
 
 Expected: a signed, versioned DMG in `dist/`.
@@ -163,10 +163,10 @@ Expected: a signed, versioned DMG in `dist/`.
 Run:
 
 ```bash
-codesign --verify --deep --strict --verbose=2 dist/CatWatch.app
-codesign --verify --strict --verbose=2 dist/CatWatch-0.2.0-arm64.dmg
-codesign -dvvv dist/CatWatch.app
-shasum -a 256 dist/CatWatch-0.2.0-arm64.dmg
+codesign --verify --deep --strict --verbose=2 dist/CatGPT.app
+codesign --verify --strict --verbose=2 dist/CatGPT-0.2.0-arm64.dmg
+codesign -dvvv dist/CatGPT.app
+shasum -a 256 dist/CatGPT-0.2.0-arm64.dmg
 ```
 
 Expected: both signature verifications succeed, the app reports the Developer ID authority and Team ID, and a SHA-256 checksum is produced.
@@ -174,8 +174,8 @@ Expected: both signature verifications succeed, the app reports the Developer ID
 ### Task 5: Publish source and GitHub Release
 
 **Files:**
-- Publish repository: `ZhenZhu990616/CatWatch`
-- Upload release asset: `dist/CatWatch-0.2.0-arm64.dmg`
+- Publish repository: `ZhenZhu990616/CatGPT`
+- Upload release asset: `dist/CatGPT-0.2.0-arm64.dmg`
 
 - [ ] **Step 1: Recheck repository scope and history**
 
@@ -185,7 +185,7 @@ Expected: the worktree is clean and no generated directory is tracked; the `rg` 
 
 - [ ] **Step 2: Create the private GitHub repository**
 
-Run: `gh repo create ZhenZhu990616/CatWatch --private --source=. --remote=origin --description "macOS menu bar screenshot analysis tool powered by ChatGPT/Codex OAuth"`
+Run: `gh repo create ZhenZhu990616/CatGPT --private --source=. --remote=origin --description "macOS menu bar screenshot analysis tool powered by ChatGPT/Codex OAuth"`
 
 Expected: GitHub creates the private repository and configures `origin`.
 
@@ -197,12 +197,12 @@ Expected: the source history appears on GitHub.
 
 - [ ] **Step 4: Create the versioned release**
 
-Run: `gh release create v0.2.0 dist/CatWatch-0.2.0-arm64.dmg --target main --title "CatWatch 0.2.0" --notes "Developer ID-signed arm64 macOS build. First-launch floating panel now defaults to 520×320; saved user dimensions remain unchanged."`
+Run: `gh release create v0.2.0 dist/CatGPT-0.2.0-arm64.dmg --target main --title "CatGPT 0.2.0" --notes "Developer ID-signed arm64 macOS build. First-launch floating panel now defaults to 520×320; saved user dimensions remain unchanged."`
 
 Expected: release `v0.2.0` exists and contains the signed DMG.
 
 - [ ] **Step 5: Verify remote publication**
 
-Run: `gh repo view ZhenZhu990616/CatWatch --json nameWithOwner,visibility,url,defaultBranchRef && gh release view v0.2.0 --repo ZhenZhu990616/CatWatch --json url,tagName,assets`
+Run: `gh repo view ZhenZhu990616/CatGPT --json nameWithOwner,visibility,url,defaultBranchRef && gh release view v0.2.0 --repo ZhenZhu990616/CatGPT --json url,tagName,assets`
 
 Expected: repository visibility is PRIVATE, default branch is `main`, and the release asset is listed with its download URL.

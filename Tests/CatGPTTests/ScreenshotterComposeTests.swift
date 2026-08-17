@@ -1,6 +1,6 @@
 import AppKit
 import XCTest
-@testable import CatWatch
+@testable import CatGPT
 
 final class ScreenshotterComposeTests: XCTestCase {
     func testComposeKeepsUnionAndIgnoresMissingImages() throws {

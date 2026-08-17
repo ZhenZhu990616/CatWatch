@@ -3,7 +3,7 @@ import Foundation
 import ScreenCaptureKit
 
 /// macOS 14+ 的 ScreenCaptureKit 截屏路径。
-/// 相比 CGDisplayCreateImage（macOS 14 起弃用）：走 GPU 管线更快、
+/// 走 GPU 管线更快、
 /// 直接以像素分辨率输出，并能用 SCContentFilter 排除自家窗口
 /// （结果面板、框选蒙层），从根上消除"先隐藏窗口再定时等待"的竞态。
 @available(macOS 14.0, *)

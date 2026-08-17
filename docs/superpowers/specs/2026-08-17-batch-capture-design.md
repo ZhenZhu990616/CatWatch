@@ -2,7 +2,7 @@
 
 ## 目标
 
-让 CatWatch 在不落盘的前提下暂存最多 8 张截图，并以一次多图片请求发送给 Codex。
+让 CatGPT 在不落盘的前提下暂存最多 8 张截图，并以一次多图片请求发送给 Codex。
 
 - `⇧` 连按两下：截取一张与“立即截图”相同范围的画面并加入缓存。
 - `Esc`：优先取消尚未完成的缓存截图；没有在途截图时删除最后一张缓存。
@@ -55,7 +55,7 @@
 ### 捕获与发送
 
 - 提取批量队列类型（例如 `BatchCaptureQueue`），保存有序 `[Data]` 和一个在途 `Task`。
-- 队列捕获复用 `Screenshotter.captureImageData(maxEdge:region:)`，因此保持 ScreenCaptureKit 对 CatWatch 自身窗口的排除逻辑。
+- 队列捕获复用 `Screenshotter.captureImageData(maxEdge:region:)`，因此保持 ScreenCaptureKit 对 CatGPT 自身窗口的排除逻辑。
 - `LLMClient` 新增多图片分析入口，把 prompt 放在同一条 user content 的最前方，随后按缓存顺序追加多个 `input_image` 项。
 - 现有单图 `analyze(imageData:)` 通过新入口实现或保留为单图包装，避免两套请求体逻辑分叉。
 

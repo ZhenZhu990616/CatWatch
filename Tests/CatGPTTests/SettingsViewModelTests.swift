@@ -1,5 +1,5 @@
 import XCTest
-@testable import CatWatch
+@testable import CatGPT
 
 @MainActor
 final class SettingsViewModelTests: XCTestCase {
@@ -43,12 +43,55 @@ final class SettingsViewModelTests: XCTestCase {
         }
 
         model.setText("   ", at: \ConfigDraft.model, field: .model)
-        try await Task.sleep(nanoseconds: 30_000_000)
+        try await waitForModelError(in: model)
 
         XCTAssertEqual(model.draft.model, "   ")
         XCTAssertEqual(model.lastAppliedDraft.model, initial.model)
         XCTAssertEqual(model.error(for: .model), "模型不能为空。")
         XCTAssertEqual(calls, 0)
+    }
+
+    func testUnknownModelStaysVisibleButDoesNotApply() async throws {
+        let initial = ConfigDraft.load()
+        var calls = 0
+        let model = makeModel(initial: initial, debounceNanoseconds: 1_000_000) { _, _ in
+            calls += 1
+        }
+
+        model.setText("gpt-not-a-real-model", at: \ConfigDraft.model, field: .model)
+        try await waitForModelError(in: model)
+
+        XCTAssertEqual(model.draft.model, "gpt-not-a-real-model")
+        XCTAssertEqual(model.lastAppliedDraft.model, initial.model)
+        XCTAssertEqual(model.error(for: .model), "模型输入有误。")
+        XCTAssertEqual(calls, 0)
+    }
+
+    func testImageEdgeIsClampedBeforeImmediateApply() {
+        let initial = ConfigDraft.load()
+        var applied: ConfigDraft?
+        let model = makeModel(initial: initial) { draft, _ in
+            applied = draft
+        }
+
+        model.setMaxImageEdge(320)
+
+        XCTAssertEqual(applied?.maxImageEdge, 640)
+        XCTAssertEqual(model.draft.maxImageEdge, 640)
+    }
+
+    func testOutputTokensAreClampedBeforeImmediateApply() {
+        var initial = ConfigDraft.load()
+        initial.maxOutputTokens = 128
+        var applied: ConfigDraft?
+        let model = makeModel(initial: initial) { draft, _ in
+            applied = draft
+        }
+
+        model.setMaxOutputTokens(-1)
+
+        XCTAssertEqual(applied?.maxOutputTokens, 0)
+        XCTAssertEqual(model.draft.maxOutputTokens, 0)
     }
 
     private func makeModel(
@@ -70,5 +113,14 @@ final class SettingsViewModelTests: XCTestCase {
             applyDraft: apply,
             debounceNanoseconds: debounceNanoseconds
         )
+    }
+
+    private func waitForModelError(in model: SettingsViewModel) async throws {
+        for _ in 0..<100 {
+            if model.error(for: .model) != nil {
+                return
+            }
+            try await Task.sleep(nanoseconds: 10_000_000)
+        }
     }
 }

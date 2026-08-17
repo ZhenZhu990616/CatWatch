@@ -1,7 +1,8 @@
 import AppKit
+import Darwin
 
 final class TouchBarResultController: NSObject, NSTouchBarDelegate {
-    private static let resultIdentifier = NSTouchBarItem.Identifier("CatWatch.touchBar.result")
+    private static let resultIdentifier = NSTouchBarItem.Identifier("CatGPT.touchBar.result")
 
     private let touchBar = NSTouchBar()
     private let indicatorView = PhaseIndicatorView(frame: NSRect(x: 0, y: 0, width: 18, height: 18))
@@ -14,10 +15,14 @@ final class TouchBarResultController: NSObject, NSTouchBarDelegate {
     private var textAlignment = ConfigDraft.defaultTouchBarTextAlignment
     private var isVisible = false
 
+    /// 展示与可用性判断均不使用私有 API 或私有 Framework。
+    static let usesPrivatePresentationAPI = false
+    static let usesPrivateAvailabilityProbe = false
+
     override init() {
         super.init()
         touchBar.delegate = self
-        touchBar.customizationIdentifier = NSTouchBar.CustomizationIdentifier("CatWatch.touchBar")
+        touchBar.customizationIdentifier = NSTouchBar.CustomizationIdentifier("CatGPT.touchBar")
         configure(
             fontSize: ConfigDraft.defaultTouchBarFontSize,
             textColor: ConfigDraft.defaultTouchBarTextColor,
@@ -96,20 +101,14 @@ final class TouchBarResultController: NSObject, NSTouchBarDelegate {
     func touchBar(_ touchBar: NSTouchBar, makeItemForIdentifier identifier: NSTouchBarItem.Identifier) -> NSTouchBarItem? {
         guard identifier == Self.resultIdentifier else { return nil }
         let item = NSCustomTouchBarItem(identifier: identifier)
-        item.customizationLabel = "CatWatch 回答"
+        item.customizationLabel = "CatGPT 回答"
         item.view = contentView
         return item
     }
 
     private func present() {
         guard !isVisible else { return }
-        // system modal 方式（Pock 同款，DFRFoundation 私有 API）不需要激活应用
-        // 即可显示：不抢用户当前应用的焦点，用户切换应用后结果也不会消失。
-        // 私有 API 不可用时降级为旧方案（设置应用级 touchBar 并激活自身）。
-        if Self.performSystemModal(selectorName: "presentSystemModalTouchBar:systemTrayItemIdentifier:", touchBar: touchBar) {
-            isVisible = true
-            return
-        }
+        // 公开 NSTouchBar API 需要应用成为当前上下文，可安全分发。
         NSApp.touchBar = touchBar
         isVisible = true
         NSApp.activate(ignoringOtherApps: true)
@@ -117,43 +116,38 @@ final class TouchBarResultController: NSObject, NSTouchBarDelegate {
 
     private func dismiss() {
         guard isVisible else { return }
-        if !Self.performSystemModal(selectorName: "dismissSystemModalTouchBar:", touchBar: touchBar) {
-            if NSApp.touchBar === touchBar {
-                NSApp.touchBar = nil
-            }
+        if NSApp.touchBar === touchBar {
+            NSApp.touchBar = nil
         }
         isVisible = false
     }
 
-    private static let dfrFoundationHandle: UnsafeMutableRawPointer? =
-        dlopen("/System/Library/PrivateFrameworks/DFRFoundation.framework/DFRFoundation", RTLD_LAZY)
+    /// 没有公开的 API 可以直接询问“此 Mac 是否带实体 Touch Bar”。
+    /// 因此只使用公开的 `hw.model` 标识，识别 Apple 曾销售的 Touch Bar
+    /// MacBook Pro；未知型号保守回退为悬浮窗，避免把回答显示到不存在的硬件上。
+    static let isAvailable = isKnownTouchBarModel(hardwareModelIdentifier())
 
-    private static var dfrFoundationLoaded: Bool { dfrFoundationHandle != nil }
+    static func isKnownTouchBarModel(_ identifier: String) -> Bool {
+        [
+            "MacBookPro13,2", "MacBookPro13,3",
+            "MacBookPro14,2", "MacBookPro14,3",
+            "MacBookPro15,1", "MacBookPro15,2", "MacBookPro15,3", "MacBookPro15,4",
+            "MacBookPro16,1", "MacBookPro16,2", "MacBookPro16,3", "MacBookPro16,4",
+            "MacBookPro17,1"
+        ].contains(identifier)
+    }
 
-    /// 本机是否有可用的 Touch Bar（实体或模拟器）。
-    /// 用 DFRFoundation 的 DFRSupportsTouchBar() 判断，供上层在无 Touch Bar 时
-    /// 回退到悬浮窗，避免答案落入黑洞。
-    static let isAvailable: Bool = {
-        guard let handle = dfrFoundationHandle,
-              let symbol = dlsym(handle, "DFRSupportsTouchBar") else {
-            return false
+    private static func hardwareModelIdentifier() -> String {
+        var length = 0
+        guard sysctlbyname("hw.model", nil, &length, nil, 0) == 0, length > 1 else {
+            return ""
         }
-        typealias SupportsFn = @convention(c) () -> Bool
-        return unsafeBitCast(symbol, to: SupportsFn.self)()
-    }()
 
-    @discardableResult
-    private static func performSystemModal(selectorName: String, touchBar: NSTouchBar) -> Bool {
-        guard dfrFoundationLoaded else { return false }
-        let selector = NSSelectorFromString(selectorName)
-        let target = NSTouchBar.self as AnyObject
-        guard target.responds(to: selector) else { return false }
-        if selectorName.contains("present") {
-            _ = target.perform(selector, with: touchBar, with: nil)
-        } else {
-            _ = target.perform(selector, with: touchBar)
+        var buffer = [CChar](repeating: 0, count: length)
+        guard sysctlbyname("hw.model", &buffer, &length, nil, 0) == 0 else {
+            return ""
         }
-        return true
+        return String(cString: buffer)
     }
 
     private func rebuildPlacement() {

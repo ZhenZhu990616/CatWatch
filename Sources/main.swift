@@ -23,6 +23,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
     private var batchCaptureTask: Task<Void, Never>?
     private var batchEscapeMonitor: Any?
     private var batchProgressUsesFloatingPanel = false
+    private let streamTextCoalescer = StreamTextUpdateCoalescer()
 
     private static let historyDateFormatter: DateFormatter = {
         let formatter = DateFormatter()
@@ -55,8 +56,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
         reloadRuntime()
         loadStoredCredentials()
 
-        // 开发辅助：CATWATCH_OPEN_SETTINGS=<分区 rawValue 或 1> 启动即打开设置窗口。
-        if let section = ProcessInfo.processInfo.environment["CATWATCH_OPEN_SETTINGS"] {
+        // 开发辅助：CATGPT_OPEN_SETTINGS=<分区 rawValue 或 1> 启动即打开设置窗口。
+        if let section = ProcessInfo.processInfo.environment["CATGPT_OPEN_SETTINGS"] {
             openSettings()
             settingsWindowController?.select(sectionRaw: section)
         }
@@ -69,7 +70,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
 
         let appMenuItem = NSMenuItem()
         let appMenu = NSMenu()
-        appMenu.addItem(withTitle: "退出 CatWatch", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        appMenu.addItem(withTitle: "退出 CatGPT", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         appMenuItem.submenu = appMenu
         mainMenu.addItem(appMenuItem)
 
@@ -110,9 +111,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         item.button?.image = StatusIcon.makeImage()
         item.button?.imagePosition = .imageOnly
-        item.button?.toolTip = "CatWatch"
-        item.button?.setAccessibilityLabel("CatWatch")
+        item.button?.toolTip = "CatGPT"
+        item.button?.setAccessibilityLabel("CatGPT")
 
+        item.menu = makeStatusMenu()
+        statusItem = item
+    }
+
+    func makeStatusMenu() -> NSMenu {
         let menu = NSMenu()
         menu.addItem(makeMenuItem(title: "偏好设置", action: #selector(openSettings), symbolName: "gearshape", keyEquivalent: ","))
         let captureItem = makeMenuItem(title: "立即截图", action: #selector(captureFromMenu), symbolName: "camera.viewfinder")
@@ -148,8 +154,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
 
         menu.addItem(loginItem)
         menu.addItem(logoutItem)
-        menu.addItem(makeMenuItem(title: "打开屏幕录制权限设置", action: #selector(permissionFromMenu), symbolName: "lock.shield"))
-        menu.addItem(makeMenuItem(title: "重新注册快捷键", action: #selector(registerHotKeyFromMenu), symbolName: "keyboard"))
         menu.addItem(.separator())
 
         let statusMenuItem = makeInfoMenuItem(title: statusText, symbolName: statusSymbolName(for: statusKind))
@@ -159,9 +163,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
 
         menu.addItem(.separator())
         menu.addItem(makeMenuItem(title: "退出", action: #selector(quit), symbolName: "power", keyEquivalent: "q"))
-        item.menu = menu
-        statusItem = item
         updateMenuShortcutTitles()
+        return menu
     }
 
     private func makeMenuItem(title: String, action: Selector, symbolName: String, keyEquivalent: String = "") -> NSMenuItem {
@@ -478,6 +481,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
         captureTask = nil
         isRunning = false
         batchProgressUsesFloatingPanel = false
+        streamTextCoalescer.cancel()
         captureToken = UUID()
         lastResult = "已中断。"
         setStatus("已中断", kind: "warning", phase: "ready")
@@ -505,7 +509,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
         }
         guard Screenshotter.hasPermission() else {
             Screenshotter.requestPermissionIfNeeded()
-            throw AppError.screenshot("需要授予 CatWatch 屏幕录制权限。请点击菜单里的“打开屏幕录制权限设置”，启用后重新打开应用。")
+            throw AppError.screenshot("需要授予 CatGPT 屏幕录制权限。请在“服务”设置中启用后重新打开应用。")
         }
         guard case .images(let images) = batchCaptureQueue.takeAllForSending() else { return }
 
@@ -522,6 +526,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
                 let answer = try await self.performBatchAnalysis(images: images, token: token)
                 guard self.captureToken == token else { return }
                 self.captureTask = nil
+                self.streamTextCoalescer.flush()
                 self.lastResult = answer
                 self.history.add(prompt: self.draft.prompt, answer: answer)
                 self.setStatus("完成", kind: "ready", phase: "ready")
@@ -550,6 +555,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
             throw AppError.configuration("请先登录 ChatGPT/Codex。")
         }
         isRunning = true
+        streamTextCoalescer.cancel()
         captureToken = UUID()
         lastResult = ""
         setStatus(status, kind: "working", phase: phase)
@@ -577,7 +583,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
         }
         guard Screenshotter.hasPermission() else {
             Screenshotter.requestPermissionIfNeeded()
-            setStatus("需要授予 CatWatch 屏幕录制权限。", kind: "error")
+            setStatus("需要授予 CatGPT 屏幕录制权限。", kind: "error")
             return
         }
         switch batchCaptureQueue.beginCapture() {
@@ -662,6 +668,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
     private func clearBatchCaptureState() {
         batchCaptureTask?.cancel()
         batchCaptureTask = nil
+        streamTextCoalescer.cancel()
         batchCaptureQueue.clear()
         batchProgressUsesFloatingPanel = false
         resultPanel.hideForCapture()
@@ -726,7 +733,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
         guard Screenshotter.hasPermission() else {
             isRunning = false
             Screenshotter.requestPermissionIfNeeded()
-            throw AppError.screenshot("需要授予 CatWatch 屏幕录制权限。请点击菜单里的“打开屏幕录制权限设置”，启用后重新打开应用。")
+            throw AppError.screenshot("需要授予 CatGPT 屏幕录制权限。请在“服务”设置中启用后重新打开应用。")
         }
 
         hideOutputForCapture()
@@ -754,6 +761,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
             guard captureToken == token else {
                 throw CancellationError()
             }
+            streamTextCoalescer.flush()
             lastResult = answer
             history.add(prompt: draft.prompt, answer: answer)
             setStatus("完成", kind: "ready", phase: "ready")
@@ -786,8 +794,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
                     self.setStatus("正在思考...", kind: "working", phase: "thinking")
                     self.showOutputPhase("thinking")
                 case .delta(let text):
-                    self.batchProgressUsesFloatingPanel = false
-                    self.showOutput(text: text, kind: "working", autoScroll: true, isStreaming: true)
+                    self.streamTextCoalescer.submit(text) { [weak self] text in
+                        guard let self, self.isRunning, self.captureToken == token else { return }
+                        self.batchProgressUsesFloatingPanel = false
+                        self.showOutput(text: text, kind: "working", autoScroll: true, isStreaming: true)
+                    }
                 }
             }
         }
@@ -846,7 +857,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
 
         Screenshotter.requestPermissionIfNeeded()
         Screenshotter.openScreenRecordingSettings()
-        setStatus("请在系统设置中启用 CatWatch 的屏幕录制权限，完成后重新打开应用", kind: "warning")
+        setStatus("请在系统设置中启用 CatGPT 的屏幕录制权限，完成后重新打开应用", kind: "warning")
     }
 
     @objc private func openSettings() {
@@ -873,6 +884,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
         }
         settingsWindowController?.showWindow(nil)
         settingsWindowController?.window?.makeKeyAndOrderFront(nil)
+        settingsWindowController?.window?.orderFrontRegardless()
         NSApp.activate(ignoringOtherApps: true)
     }
 
@@ -1014,6 +1026,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        resultPanel.flushPendingFrame()
         clearBatchCaptureState()
     }
 
@@ -1035,21 +1048,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
         return true
     }
 
-    @objc private func permissionFromMenu() {
-        requestScreenPermission()
-    }
-
-    @objc private func registerHotKeyFromMenu() {
-        do {
-            applyPanelSettings(from: draft)
-            try registerHotKeys(from: draft)
-            setStatus(hotKeyStatus, kind: "ready")
-        } catch {
-            hotKeyStatus = error.localizedDescription
-            setStatus(error.localizedDescription, kind: "error")
-        }
-    }
-
     @objc private func quit() {
         NSApp.terminate(nil)
     }
@@ -1061,21 +1059,25 @@ enum StatusIcon {
         image.lockFocus()
 
         NSColor.black.setFill()
-        let path = CGMutablePath()
-        func point(_ x: CGFloat, _ y: CGFloat) -> CGPoint {
-            CGPoint(x: x / 100 * 18, y: (100 - y) / 100 * 18)
-        }
-        path.move(to: point(15, 105))
-        path.addLine(to: point(20, 35))
-        path.addLine(to: point(38, 60))
-        path.addQuadCurve(to: point(62, 60), control: point(50, 52))
-        path.addLine(to: point(80, 35))
-        path.addLine(to: point(85, 105))
-        path.closeSubpath()
 
         if let context = NSGraphicsContext.current?.cgContext {
-            context.addPath(path)
+            context.addPath(CatBodyMark.appKitPath(in: CGRect(origin: .zero, size: image.size)))
             context.fillPath()
+
+            // 模板图会由系统统一着色；脸部细节要以透明镂空而非另一种颜色绘制，
+            // 才能在浅色和深色菜单栏中都保留嘴巴与胡须。
+            let features = CatBodyMark.appKitFacialFeatures(in: CGRect(origin: .zero, size: image.size))
+            context.setBlendMode(.clear)
+            context.setLineCap(.round)
+            context.setLineJoin(.round)
+            context.setLineWidth(max(0.8, 2.6 / 100 * image.size.width))
+            context.addPath(features.mouth)
+            context.strokePath()
+            context.addPath(features.mouthStem)
+            context.strokePath()
+            context.setLineWidth(max(0.7, 2.25 / 100 * image.size.width))
+            context.addPath(features.whiskers)
+            context.strokePath()
         }
 
         image.unlockFocus()
@@ -1238,6 +1240,16 @@ final class ResultPanelController: NSObject {
             return
         }
         panel?.orderOut(nil)
+    }
+
+    func flushPendingFrame() {
+        guard Thread.isMainThread else {
+            DispatchQueue.main.async { [weak self] in self?.flushPendingFrame() }
+            return
+        }
+        frameSaveDebounce?.cancel()
+        frameSaveDebounce = nil
+        flushStoredFrame()
     }
 
     private func makePanel() -> NSPanel {

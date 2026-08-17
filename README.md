@@ -1,12 +1,16 @@
-# CatWatch
+<p align="center">
+  <img src="docs/assets/catgpt-icon.png" width="128" alt="CatGPT 应用图标">
+</p>
+
+# CatGPT
 
 一个只使用 ChatGPT/Codex OAuth 的 macOS 菜单栏工具。设置界面是原生 macOS 窗口，不再启动 localhost Web 前端。
 
 ## 运行
 
 ```sh
-cd /Users/apple/Developer/CatWatch
-swift run CatWatch
+cd /Users/apple/Developer/CatGPT
+swift run CatGPT
 ```
 
 启动后只显示菜单栏图标。菜单栏图标提供：

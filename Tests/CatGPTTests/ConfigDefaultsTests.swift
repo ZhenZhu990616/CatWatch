@@ -1,5 +1,5 @@
 import XCTest
-@testable import CatWatch
+@testable import CatGPT
 
 final class ConfigDefaultsTests: XCTestCase {
     func testFloatingPanelUsesReadableFirstLaunchSize() {
@@ -27,7 +27,7 @@ final class ConfigDefaultsTests: XCTestCase {
 
     func testCaptureRegionShortcutDefaultsWhenNoValueIsStored() {
         let defaults = UserDefaults.standard
-        let key = "screenLLM.captureRegionHotKey"
+        let key = "catGPT.captureRegionHotKey"
         let previous = defaults.object(forKey: key)
         defer {
             if let previous {
@@ -44,7 +44,7 @@ final class ConfigDefaultsTests: XCTestCase {
 
     func testLegacyCaptureRegionShortcutMigratesWithoutOverwritingCustomShortcut() {
         let defaults = UserDefaults.standard
-        let keys = ["screenLLM.captureRegionHotKey", "screenLLM.captureRegionShortcutMigrationVersion"]
+        let keys = ["catGPT.captureRegionHotKey", "catGPT.captureRegionShortcutMigrationVersion"]
         let previous = Dictionary(uniqueKeysWithValues: keys.map { ($0, defaults.object(forKey: $0)) })
         defer {
             for (key, value) in previous {
@@ -52,22 +52,22 @@ final class ConfigDefaultsTests: XCTestCase {
             }
         }
 
-        defaults.removeObject(forKey: "screenLLM.captureRegionShortcutMigrationVersion")
-        defaults.set("shift double tap", forKey: "screenLLM.captureRegionHotKey")
+        defaults.removeObject(forKey: "catGPT.captureRegionShortcutMigrationVersion")
+        defaults.set("shift double tap", forKey: "catGPT.captureRegionHotKey")
         XCTAssertEqual(ConfigDraft.load().captureRegionHotKeyText, "cmd+e")
 
-        defaults.removeObject(forKey: "screenLLM.captureRegionShortcutMigrationVersion")
-        defaults.set("cmd+shift+r", forKey: "screenLLM.captureRegionHotKey")
+        defaults.removeObject(forKey: "catGPT.captureRegionShortcutMigrationVersion")
+        defaults.set("cmd+shift+r", forKey: "catGPT.captureRegionHotKey")
         XCTAssertEqual(ConfigDraft.load().captureRegionHotKeyText, "cmd+shift+r")
     }
 
     func testLegacyDefaultShortcutsMigrateWithoutOverwritingCustomShortcut() {
         let defaults = UserDefaults.standard
         let keys = [
-            "screenLLM.hotKey",
-            "screenLLM.selectionHotKey",
-            "screenLLM.panelHotKey",
-            "screenLLM.shortcutDefaultsMigrationVersion"
+            "catGPT.hotKey",
+            "catGPT.selectionHotKey",
+            "catGPT.panelHotKey",
+            "catGPT.shortcutDefaultsMigrationVersion"
         ]
         let previous = Dictionary(uniqueKeysWithValues: keys.map { ($0, defaults.object(forKey: $0)) })
         defer {
@@ -80,24 +80,24 @@ final class ConfigDefaultsTests: XCTestCase {
             }
         }
 
-        defaults.removeObject(forKey: "screenLLM.shortcutDefaultsMigrationVersion")
-        defaults.set("cmd+shift+l", forKey: "screenLLM.hotKey")
-        defaults.set("cmd+shift+k", forKey: "screenLLM.selectionHotKey")
-        defaults.set("cmd+shift+p", forKey: "screenLLM.panelHotKey")
+        defaults.removeObject(forKey: "catGPT.shortcutDefaultsMigrationVersion")
+        defaults.set("cmd+shift+l", forKey: "catGPT.hotKey")
+        defaults.set("cmd+shift+k", forKey: "catGPT.selectionHotKey")
+        defaults.set("cmd+shift+p", forKey: "catGPT.panelHotKey")
 
         let draft = ConfigDraft.load()
 
         XCTAssertEqual(draft.hotKeyText, ConfigDraft.defaultHotKey)
         XCTAssertEqual(draft.selectionHotKeyText, ConfigDraft.defaultSelectionHotKey)
         XCTAssertEqual(draft.panelHotKeyText, "cmd+shift+p")
-        XCTAssertEqual(defaults.string(forKey: "screenLLM.hotKey"), ConfigDraft.defaultHotKey)
-        XCTAssertEqual(defaults.string(forKey: "screenLLM.selectionHotKey"), ConfigDraft.defaultSelectionHotKey)
-        XCTAssertEqual(defaults.string(forKey: "screenLLM.panelHotKey"), "cmd+shift+p")
+        XCTAssertEqual(defaults.string(forKey: "catGPT.hotKey"), ConfigDraft.defaultHotKey)
+        XCTAssertEqual(defaults.string(forKey: "catGPT.selectionHotKey"), ConfigDraft.defaultSelectionHotKey)
+        XCTAssertEqual(defaults.string(forKey: "catGPT.panelHotKey"), "cmd+shift+p")
     }
 
     func testSupportedGPT55ModelIsNotMigratedOnNextLaunch() {
         let defaults = UserDefaults.standard
-        let key = "screenLLM.model"
+        let key = "catGPT.model"
         let previous = defaults.object(forKey: key)
         defer {
             if let previous {
