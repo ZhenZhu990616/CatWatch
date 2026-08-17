@@ -1,6 +1,7 @@
 import AppKit
 import Foundation
 
+@MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, NSMenuDelegate {
     private var statusItem: NSStatusItem?
     private var statusMenuItem: NSMenuItem?
@@ -279,30 +280,41 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
               let preset = PromptPresetStore.load().first(where: { $0.id == id }) else {
             return
         }
-        draft.prompt = preset.text
-        draft.save()
-        reloadRuntime()
-        settingsWindowController?.reload()
-        setStatus("已切换提示词预设：\(preset.name)", kind: "ready")
+        var proposed = draft
+        proposed.prompt = preset.text
+        do {
+            try applyDraftFromSettings(proposed, scope: .client)
+            settingsWindowController?.reload()
+            setStatus("已切换提示词预设：\(preset.name)", kind: "ready")
+        } catch {
+            setStatus(error.localizedDescription, kind: "error")
+        }
     }
 
     private func reloadRuntime() {
-        applyPanelSettings()
+        applyPanelSettings(from: draft)
         updateAccountMenuItems()
 
         let hotKeyError: Error?
         do {
-            try registerHotKeys()
+            try registerHotKeys(from: draft)
             hotKeyError = nil
         } catch {
             hotKeyError = error
             hotKeyStatus = error.localizedDescription
         }
 
+        rebuildClient(from: draft)
+        if let hotKeyError {
+            setStatus(hotKeyError.localizedDescription, kind: "warning")
+        }
+    }
+
+    private func rebuildClient(from candidate: ConfigDraft) {
         let generation = clientGeneration
         let config: AppConfig
         do {
-            config = try draft.makeConfig(codexCredentials: credentials)
+            config = try candidate.makeConfig(codexCredentials: credentials)
         } catch {
             client = nil
             if credentialsLoaded {
@@ -326,11 +338,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
                 KeychainStore.saveCodexCredentialsAsync(credentials)
             }
         }
-        if let hotKeyError {
-            setStatus(hotKeyError.localizedDescription, kind: "warning")
-        } else {
-            setStatus("已登录，可截图", kind: "ready")
-        }
+        setStatus("已登录，可截图", kind: "ready")
     }
 
     private func loadStoredCredentials() {
@@ -344,44 +352,35 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
         }
     }
 
-    private func applyPanelSettings() {
+    private func applyPanelSettings(from candidate: ConfigDraft) {
         resultPanel.configure(
-            width: draft.normalizedPanelWidth,
-            height: draft.normalizedPanelHeight,
-            opacity: draft.normalizedPanelOpacity,
-            textOpacity: draft.normalizedPanelTextOpacity,
-            fontSize: draft.normalizedPanelFontSize,
-            textColor: draft.panelTextColor,
-            originX: draft.panelOriginX,
-            originY: draft.panelOriginY
+            width: candidate.normalizedPanelWidth,
+            height: candidate.normalizedPanelHeight,
+            opacity: candidate.normalizedPanelOpacity,
+            textOpacity: candidate.normalizedPanelTextOpacity,
+            fontSize: candidate.normalizedPanelFontSize,
+            textColor: candidate.panelTextColor,
+            originX: candidate.panelOriginX,
+            originY: candidate.panelOriginY
         )
         touchBarResult.configure(
-            fontSize: draft.normalizedTouchBarFontSize,
-            textColor: draft.touchBarTextColor,
-            textIntensity: draft.normalizedTouchBarTextIntensity,
-            textAlignment: draft.touchBarTextAlignment
+            fontSize: candidate.normalizedTouchBarFontSize,
+            textColor: candidate.touchBarTextColor,
+            textIntensity: candidate.normalizedTouchBarTextIntensity,
+            textAlignment: candidate.touchBarTextAlignment
         )
     }
 
-    private func registerHotKeys() throws {
+    private func registerHotKeys(from candidate: ConfigDraft) throws {
         shortcutRegistry.unregisterAll()
 
-        let captureShortcut = try draft.makeShortcut()
-        let selectionShortcut = try draft.makeSelectionShortcut()
-        let panelShortcut = try draft.makePanelShortcut()
+        let captureShortcut = try candidate.makeShortcut()
+        let selectionShortcut = try candidate.makeSelectionShortcut()
+        let panelShortcut = try candidate.makePanelShortcut()
+        let captureRegionShortcut = try candidate.makeCaptureRegionShortcut()
 
-        // per-shortcut 容错：某个快捷键与他人冲突（或系统占用）注册失败时，
-        // 不中断其余快捷键的注册，并在状态里指明是哪一个失败。
-        var failed: [String] = []
-        func tryRegister(_ shortcut: Shortcut, id: UInt32, name: String, _ callback: @escaping () -> Void) {
-            do {
-                try shortcutRegistry.register(shortcut: shortcut, id: id, callback: callback)
-            } catch {
-                failed.append(name)
-            }
-        }
-
-        tryRegister(captureShortcut, id: 1, name: "截图") { [weak self] in
+        do {
+            try shortcutRegistry.register(shortcut: captureShortcut, id: 1) { [weak self] in
             Task { @MainActor in
                 do {
                     try self?.launchCapture(selection: false)
@@ -390,9 +389,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
                     self?.setStatus(error.localizedDescription, kind: "error")
                 }
             }
-        }
+            }
 
-        tryRegister(selectionShortcut, id: 2, name: "框选") { [weak self] in
+            try shortcutRegistry.register(shortcut: selectionShortcut, id: 2) { [weak self] in
             Task { @MainActor in
                 do {
                     try self?.launchCapture(selection: true)
@@ -401,26 +400,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
                     self?.setStatus(error.localizedDescription, kind: "error")
                 }
             }
-        }
+            }
 
-        tryRegister(panelShortcut, id: 3, name: "结果") { [weak self] in
+            try shortcutRegistry.register(shortcut: panelShortcut, id: 3) { [weak self] in
             Task { @MainActor in
                 self?.toggleResultPanel()
             }
-        }
+            }
 
-        if failed.isEmpty {
-            hotKeyStatus = "快捷键已启用：截图 \(captureShortcut.displayText) / 框选 \(selectionShortcut.displayText) / 结果 \(panelShortcut.displayText)"
-        } else {
-            hotKeyStatus = "以下快捷键注册失败（可能与其它快捷键重复或被系统占用）：\(failed.joined(separator: "、"))"
+            try shortcutRegistry.register(shortcut: captureRegionShortcut, id: 4) { [weak self] in
+                self?.chooseCaptureRegionFromShortcut()
+            }
+
+            hotKeyStatus = "快捷键已启用：截图 \(captureShortcut.displayText) / 框选 \(selectionShortcut.displayText) / 结果 \(panelShortcut.displayText) / 固定区域 \(captureRegionShortcut.displayText)"
+            updateMenuShortcutTitles(from: candidate)
+        } catch {
+            shortcutRegistry.unregisterAll()
+            throw error
         }
-        updateMenuShortcutTitles()
     }
 
-    private func updateMenuShortcutTitles() {
-        applyMenuShortcut(captureMenuItem, title: "立即截图", shortcut: try? draft.makeShortcut())
-        applyMenuShortcut(selectionMenuItem, title: "框选截图", shortcut: try? draft.makeSelectionShortcut())
-        applyMenuShortcut(resultMenuItem, title: "呼出/隐藏结果", shortcut: try? draft.makePanelShortcut())
+    private func updateMenuShortcutTitles(from candidate: ConfigDraft? = nil) {
+        let source = candidate ?? draft
+        applyMenuShortcut(captureMenuItem, title: "立即截图", shortcut: try? source.makeShortcut())
+        applyMenuShortcut(selectionMenuItem, title: "框选截图", shortcut: try? source.makeSelectionShortcut())
+        applyMenuShortcut(resultMenuItem, title: "呼出/隐藏结果", shortcut: try? source.makePanelShortcut())
     }
 
     private func applyMenuShortcut(_ item: NSMenuItem?, title: String, shortcut: Shortcut?) {
@@ -537,10 +541,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
         }
 
         hideOutputForCapture()
-        if #unavailable(macOS 14.0) {
-            // 旧截屏路径无法排除自家窗口，等结果面板真正消失后再截。
-            try? await Task.sleep(nanoseconds: 160_000_000)
-        }
         try Task.checkCancellation()
 
         do {
@@ -580,8 +580,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
             }
             if captureToken == token {
                 isRunning = false
-                setStatus(error.localizedDescription, kind: "error", phase: "error")
-                showOutput(text: error.localizedDescription, kind: "error")
             }
             throw error
         }
@@ -674,7 +672,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
                         hotKeyStatus: self?.hotKeyStatus ?? "快捷键未启用"
                     )
                 },
-                onSave: { [weak self] draft in self?.saveDraftFromSettings(draft) },
+                onApply: { [weak self] candidate, scope in
+                    guard let self else { return }
+                    try self.applyDraftFromSettings(candidate, scope: scope)
+                },
                 onLogin: { [weak self] in self?.startLoginFromSettings() },
                 onLogout: { [weak self] in self?.logout() },
                 onPermission: { [weak self] in self?.requestScreenPermission() }
@@ -685,18 +686,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
         NSApp.activate(ignoringOtherApps: true)
     }
 
-    private func saveDraftFromSettings(_ newDraft: ConfigDraft) {
-        var merged = newDraft
-        // 浮窗几何由运行时拖动实时写入 self.draft，设置页不编辑这些字段；
-        // 保存时以运行时值为准，别用设置页的陈旧快照把它们回退。
-        merged.panelWidth = draft.panelWidth
-        merged.panelHeight = draft.panelHeight
-        merged.panelOriginX = draft.panelOriginX
-        merged.panelOriginY = draft.panelOriginY
-        draft = merged
-        draft.save()
-        reloadRuntime()
-        settingsWindowController?.reload()
+    private func applyDraftFromSettings(
+        _ proposed: ConfigDraft,
+        scope: SettingsUpdateScope
+    ) throws {
+        let application = SettingsApplication(
+            persist: { $0.save() },
+            appearance: { [weak self] candidate in
+                self?.applyPanelSettings(from: candidate)
+            },
+            shortcuts: { [weak self] candidate in
+                guard let self else { return }
+                try self.registerHotKeys(from: candidate)
+            },
+            client: { [weak self] candidate in
+                self?.rebuildClient(from: candidate)
+            }
+        )
+        try application.apply(proposed, to: &draft, scope: scope)
     }
 
     private func startLoginFromSettings() {
@@ -743,6 +750,33 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
         } catch {
             lastResult = error.localizedDescription
             showOutput(text: error.localizedDescription, kind: "error")
+        }
+    }
+
+    private func chooseCaptureRegionFromShortcut() {
+        Task { @MainActor in
+            let previousWindow = NSApp.keyWindow
+            let shouldRestoreSettings = previousWindow === settingsWindowController?.window
+            if shouldRestoreSettings {
+                previousWindow?.orderOut(nil)
+            }
+            try? await Task.sleep(nanoseconds: 120_000_000)
+            defer {
+                if shouldRestoreSettings {
+                    NSApp.activate(ignoringOtherApps: true)
+                    previousWindow?.makeKeyAndOrderFront(nil)
+                }
+            }
+
+            guard let rect = try? await SelectionCapture.selectRegion() else { return }
+            draft.captureRegionEnabled = true
+            draft.captureRegionX = rect.origin.x.rounded()
+            draft.captureRegionY = rect.origin.y.rounded()
+            draft.captureRegionWidth = rect.width.rounded()
+            draft.captureRegionHeight = rect.height.rounded()
+            draft.save()
+            settingsWindowController?.reload()
+            setStatus("固定截图区域已更新", kind: "ready")
         }
     }
 
@@ -812,8 +846,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
 
     @objc private func registerHotKeyFromMenu() {
         do {
-            applyPanelSettings()
-            try registerHotKeys()
+            applyPanelSettings(from: draft)
+            try registerHotKeys(from: draft)
             setStatus(hotKeyStatus, kind: "ready")
         } catch {
             hotKeyStatus = error.localizedDescription
@@ -858,17 +892,20 @@ enum StatusIcon {
 final class ResultPanelController: NSObject {
     private var panel: NSPanel?
     private let backgroundView = NSVisualEffectView()
-    private let textView = DraggableTextView()
+    private let textView = NSTextView()
     private let indicatorView = PhaseIndicatorView()
+    private let batchIndicatorView = BatchCaptureIndicatorView()
     private var panelWidth = ConfigDraft.defaultPanelWidth
     private var panelHeight = ConfigDraft.defaultPanelHeight
     private var panelOpacity = ConfigDraft.defaultPanelOpacity
     private var panelTextOpacity = ConfigDraft.defaultPanelTextOpacity
     private var panelFontSize = ConfigDraft.defaultPanelFontSize
     private var panelTextColor = ConfigDraft.defaultPanelTextColor
-    private var panelOrigin: NSPoint?
+    private(set) var panelOrigin: NSPoint?
     private var indicatorWidthConstraint: NSLayoutConstraint?
     private var indicatorHeightConstraint: NSLayoutConstraint?
+    private var batchIndicatorWidthConstraint: NSLayoutConstraint?
+    private var batchIndicatorHeightConstraint: NSLayoutConstraint?
     private var currentText = ""
     private var renderMarkdown = true
     private var frameSaveDebounce: DispatchWorkItem?
@@ -890,8 +927,10 @@ final class ResultPanelController: NSObject {
         panelTextOpacity = textOpacity
         panelFontSize = fontSize
         panelTextColor = textColor
-        if let originX, let originY {
-            panelOrigin = NSPoint(x: originX, y: originY)
+        panelOrigin = if let originX, let originY {
+            NSPoint(x: originX, y: originY)
+        } else {
+            nil
         }
         applyVisualSettings()
         guard let panel else { return }
@@ -920,6 +959,7 @@ final class ResultPanelController: NSObject {
         self.panel = panel
 
         indicatorView.isHidden = true
+        batchIndicatorView.isHidden = true
         currentText = text
         renderMarkdown = !isStreaming
         textView.isHidden = false
@@ -950,9 +990,32 @@ final class ResultPanelController: NSObject {
         currentText = ""
         textView.isHidden = true
         indicatorView.isHidden = false
+        batchIndicatorView.isHidden = true
         indicatorView.setPhase(phase)
         applyVisualSettings()
 
+        place(panel)
+        panel.orderFrontRegardless()
+    }
+
+    func showBatch(count: Int) {
+        guard Thread.isMainThread else {
+            DispatchQueue.main.async { [weak self] in self?.showBatch(count: count) }
+            return
+        }
+        guard count > 0 else {
+            hideForCapture()
+            return
+        }
+
+        let panel = panel ?? makePanel()
+        self.panel = panel
+        currentText = ""
+        textView.isHidden = true
+        indicatorView.isHidden = true
+        batchIndicatorView.isHidden = false
+        batchIndicatorView.setCount(count)
+        applyVisualSettings()
         place(panel)
         panel.orderFrontRegardless()
     }
@@ -1025,6 +1088,8 @@ final class ResultPanelController: NSObject {
 
         indicatorView.translatesAutoresizingMaskIntoConstraints = false
         indicatorView.isHidden = true
+        batchIndicatorView.translatesAutoresizingMaskIntoConstraints = false
+        batchIndicatorView.isHidden = true
 
         textView.isEditable = false
         textView.isSelectable = true
@@ -1042,6 +1107,7 @@ final class ResultPanelController: NSObject {
 
         content.addSubview(scrollView)
         content.addSubview(indicatorView)
+        content.addSubview(batchIndicatorView)
         panel.contentView = root
         applyVisualSettings()
 
@@ -1059,6 +1125,9 @@ final class ResultPanelController: NSObject {
             indicatorView.leadingAnchor.constraint(equalTo: content.leadingAnchor),
             indicatorView.topAnchor.constraint(equalTo: content.topAnchor),
 
+            batchIndicatorView.leadingAnchor.constraint(equalTo: content.leadingAnchor),
+            batchIndicatorView.topAnchor.constraint(equalTo: content.topAnchor),
+
             scrollView.leadingAnchor.constraint(equalTo: content.leadingAnchor),
             scrollView.trailingAnchor.constraint(equalTo: content.trailingAnchor),
             scrollView.topAnchor.constraint(equalTo: content.topAnchor),
@@ -1072,6 +1141,12 @@ final class ResultPanelController: NSObject {
         indicatorHeightConstraint = heightConstraint
         NSLayoutConstraint.activate([widthConstraint, heightConstraint])
 
+        let batchWidthConstraint = batchIndicatorView.widthAnchor.constraint(equalToConstant: 0)
+        let batchHeightConstraint = batchIndicatorView.heightAnchor.constraint(equalToConstant: 0)
+        batchIndicatorWidthConstraint = batchWidthConstraint
+        batchIndicatorHeightConstraint = batchHeightConstraint
+        NSLayoutConstraint.activate([batchWidthConstraint, batchHeightConstraint])
+
         return panel
     }
 
@@ -1081,6 +1156,7 @@ final class ResultPanelController: NSObject {
         let materialAppearance = backgroundView.effectiveAppearance
         textView.appearance = materialAppearance
         indicatorView.appearance = materialAppearance
+        batchIndicatorView.appearance = materialAppearance
 
         // HUD 材质在不同 macOS 版本上可能采用不同的明暗外观。正文不是
         // backgroundView 的子视图（否则背景透明度会连带压低文字透明度），
@@ -1092,6 +1168,10 @@ final class ResultPanelController: NSObject {
             indicatorView.configure(color: textColor, opacity: panelTextOpacity)
             indicatorWidthConstraint?.constant = CGFloat(panelFontSize)
             indicatorHeightConstraint?.constant = CGFloat(panelFontSize)
+            let batchStarSize = max(6, CGFloat(panelFontSize) * 0.5)
+            batchIndicatorView.configure(color: textColor, opacity: panelTextOpacity, starSize: batchStarSize)
+            batchIndicatorWidthConstraint?.constant = batchIndicatorView.intrinsicContentSize.width
+            batchIndicatorHeightConstraint?.constant = batchIndicatorView.intrinsicContentSize.height
 
             let font = NSFont.systemFont(ofSize: CGFloat(panelFontSize))
             let color = textColor.withAlphaComponent(CGFloat(panelTextOpacity))
@@ -1159,14 +1239,6 @@ final class ResultPanelController: NSObject {
         )
     }
 
-}
-
-private final class DraggableTextView: NSTextView {
-    override var mouseDownCanMoveWindow: Bool { true }
-
-    override func mouseDown(with event: NSEvent) {
-        window?.performDrag(with: event)
-    }
 }
 
 extension ResultPanelController: NSWindowDelegate {
@@ -1350,7 +1422,7 @@ final class PhaseIndicatorView: NSView {
 }
 
 let app = NSApplication.shared
-let delegate = AppDelegate()
+let delegate = MainActor.assumeIsolated { AppDelegate() }
 app.delegate = delegate
 app.finishLaunching()
 app.run()
