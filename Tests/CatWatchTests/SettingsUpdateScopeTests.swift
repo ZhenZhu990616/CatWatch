@@ -2,7 +2,7 @@ import XCTest
 @testable import CatWatch
 
 final class SettingsUpdateScopeTests: XCTestCase {
-    private var base: ConfigDraft { ConfigDraft.load() }
+    private var base = ConfigDraft.load()
 
     func testAppearanceFieldsOnlyRequestAppearanceUpdate() {
         var changed = base
@@ -18,7 +18,7 @@ final class SettingsUpdateScopeTests: XCTestCase {
 
     func testClientFieldsOnlyRequestClientUpdate() {
         var changed = base
-        changed.model = "gpt-5.6-sol"
+        changed.model = base.model == "gpt-5.6-sol" ? "gpt-5.6-terra" : "gpt-5.6-sol"
         XCTAssertEqual(SettingsUpdateScope.changed(from: base, to: changed), [.client])
     }
 
