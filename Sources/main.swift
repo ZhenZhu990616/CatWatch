@@ -1,4 +1,5 @@
 import AppKit
+import Carbon.HIToolbox
 import Foundation
 
 @MainActor
@@ -18,6 +19,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
     private var historyMenu: NSMenu?
     private var presetMenu: NSMenu?
     private var settingsWindowController: SettingsWindowController?
+    private let batchCaptureQueue = BatchCaptureQueue()
+    private var batchCaptureTask: Task<Void, Never>?
+    private var batchEscapeMonitor: Any?
+    private var batchProgressUsesFloatingPanel = false
 
     private static let historyDateFormatter: DateFormatter = {
         let formatter = DateFormatter()
@@ -378,12 +383,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
         let selectionShortcut = try candidate.makeSelectionShortcut()
         let panelShortcut = try candidate.makePanelShortcut()
         let captureRegionShortcut = try candidate.makeCaptureRegionShortcut()
+        let batchCaptureShortcut = try candidate.makeBatchCaptureShortcut()
 
         do {
             try shortcutRegistry.register(shortcut: captureShortcut, id: 1) { [weak self] in
             Task { @MainActor in
                 do {
-                    try self?.launchCapture(selection: false)
+                    try self?.launchImmediateCapture()
                 } catch {
                     self?.lastResult = error.localizedDescription
                     self?.setStatus(error.localizedDescription, kind: "error")
@@ -412,7 +418,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
                 self?.chooseCaptureRegionFromShortcut()
             }
 
-            hotKeyStatus = "快捷键已启用：截图 \(captureShortcut.displayText) / 框选 \(selectionShortcut.displayText) / 结果 \(panelShortcut.displayText) / 固定区域 \(captureRegionShortcut.displayText)"
+            try shortcutRegistry.register(shortcut: batchCaptureShortcut, id: 5) { [weak self] in
+                Task { @MainActor in
+                    self?.launchBatchCapture()
+                }
+            }
+
+            hotKeyStatus = "快捷键已启用：截图 \(captureShortcut.displayText) / 框选 \(selectionShortcut.displayText) / 结果 \(panelShortcut.displayText) / 固定区域 \(captureRegionShortcut.displayText) / 批量 \(batchCaptureShortcut.displayText)"
             updateMenuShortcutTitles(from: candidate)
         } catch {
             shortcutRegistry.unregisterAll()
@@ -465,11 +477,195 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
     private func finishCancelledCapture() {
         captureTask = nil
         isRunning = false
+        batchProgressUsesFloatingPanel = false
         captureToken = UUID()
         lastResult = "已中断。"
         setStatus("已中断", kind: "warning", phase: "ready")
         // 用户主动取消不弹结果面板，安静收场即可。
         hideOutputForCapture()
+    }
+
+    private func launchImmediateCapture() throws {
+        if batchCaptureQueue.isCapturing {
+            setStatus("正在缓存截图，请稍候", kind: "warning")
+        } else if batchCaptureQueue.isEmpty {
+            try launchCapture(selection: false)
+        } else {
+            try sendBatchCaptureQueue()
+        }
+    }
+
+    private func sendBatchCaptureQueue() throws {
+        guard !batchCaptureQueue.isCapturing else {
+            setStatus("正在缓存截图，请稍候", kind: "warning")
+            return
+        }
+        guard client != nil else {
+            throw AppError.configuration("请先登录 ChatGPT/Codex。")
+        }
+        guard Screenshotter.hasPermission() else {
+            Screenshotter.requestPermissionIfNeeded()
+            throw AppError.screenshot("需要授予 CatWatch 屏幕录制权限。请点击菜单里的“打开屏幕录制权限设置”，启用后重新打开应用。")
+        }
+        guard case .images(let images) = batchCaptureQueue.takeAllForSending() else { return }
+
+        try startRequestState(status: "正在发送到 Codex...", phase: "sending")
+        batchProgressUsesFloatingPanel = true
+        syncBatchEscapeMonitor()
+        touchBarResult.hideForCapture()
+        resultPanel.showPhase("sending")
+
+        let token = captureToken
+        let generation = clientGeneration
+        captureTask = Task { @MainActor in
+            do {
+                let answer = try await self.performBatchAnalysis(images: images, token: token)
+                guard self.captureToken == token else { return }
+                self.captureTask = nil
+                self.lastResult = answer
+                self.history.add(prompt: self.draft.prompt, answer: answer)
+                self.setStatus("完成", kind: "ready", phase: "ready")
+                self.showOutput(text: answer, kind: "ready")
+                self.isRunning = false
+                self.batchProgressUsesFloatingPanel = false
+            } catch {
+                if self.isCancellation(error) {
+                    if self.captureToken == token { self.finishCancelledCapture() }
+                    return
+                }
+                guard self.captureToken == token else { return }
+                self.captureTask = nil
+                self.isRunning = false
+                self.batchProgressUsesFloatingPanel = false
+                self.handleAuthExpiredIfNeeded(error, generation: generation)
+                self.lastResult = error.localizedDescription
+                self.setStatus(error.localizedDescription, kind: "error", phase: "error")
+                self.showOutput(text: error.localizedDescription, kind: "error")
+            }
+        }
+    }
+
+    private func startRequestState(status: String, phase: String) throws {
+        guard client != nil else {
+            throw AppError.configuration("请先登录 ChatGPT/Codex。")
+        }
+        isRunning = true
+        captureToken = UUID()
+        lastResult = ""
+        setStatus(status, kind: "working", phase: phase)
+    }
+
+    @MainActor
+    private func performBatchAnalysis(images: [Data], token: UUID) async throws -> String {
+        guard let client else {
+            throw AppError.configuration("请先登录 ChatGPT/Codex。")
+        }
+        let answer = try await client.analyze(
+            imageDataList: images,
+            mimeType: "image/jpeg",
+            onEvent: streamEventHandler(token: token)
+        )
+        try Task.checkCancellation()
+        guard captureToken == token else { throw CancellationError() }
+        return answer
+    }
+
+    private func launchBatchCapture() {
+        guard !isRunning else {
+            setStatus("当前任务尚未完成", kind: "warning")
+            return
+        }
+        guard Screenshotter.hasPermission() else {
+            Screenshotter.requestPermissionIfNeeded()
+            setStatus("需要授予 CatWatch 屏幕录制权限。", kind: "error")
+            return
+        }
+        switch batchCaptureQueue.beginCapture() {
+        case .busy:
+            setStatus("正在缓存截图，请稍候", kind: "warning")
+            return
+        case .full:
+            setStatus("最多缓存 8 张，请先发送", kind: "warning")
+            return
+        case .started:
+            break
+        }
+
+        hideOutputForCapture()
+        if batchCaptureQueue.count > 0 {
+            resultPanel.showBatch(count: batchCaptureQueue.count)
+        }
+        syncBatchEscapeMonitor()
+        let maxEdge = draft.normalizedMaxImageEdge
+        let region = draft.captureRegion
+        batchCaptureTask = Task { @MainActor in
+            defer {
+                self.batchCaptureTask = nil
+                self.syncBatchEscapeMonitor()
+            }
+            do {
+                let image = try await Screenshotter.captureImageData(maxEdge: maxEdge, region: region)
+                try Task.checkCancellation()
+                let previousCount = self.batchCaptureQueue.count
+                self.batchCaptureQueue.completeCapture(image)
+                guard self.batchCaptureQueue.count > previousCount else { return }
+                self.setStatus("已缓存 \(self.batchCaptureQueue.count) 张截图", kind: "ready")
+                self.resultPanel.showBatch(count: self.batchCaptureQueue.count)
+            } catch {
+                self.batchCaptureQueue.cancelInFlightCapture()
+                if self.isCancellation(error) { return }
+                self.setStatus(error.localizedDescription, kind: "error")
+                if self.batchCaptureQueue.count > 0 {
+                    self.resultPanel.showBatch(count: self.batchCaptureQueue.count)
+                } else {
+                    self.resultPanel.hideForCapture()
+                }
+            }
+        }
+    }
+
+    private func syncBatchEscapeMonitor() {
+        let shouldMonitor = batchCaptureQueue.isCapturing || !batchCaptureQueue.isEmpty
+        if shouldMonitor, batchEscapeMonitor == nil {
+            batchEscapeMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { [weak self] event in
+                guard event.keyCode == UInt16(kVK_Escape) else { return }
+                Task { @MainActor in self?.handleBatchEscape() }
+            }
+        } else if !shouldMonitor, let batchEscapeMonitor {
+            NSEvent.removeMonitor(batchEscapeMonitor)
+            self.batchEscapeMonitor = nil
+        }
+    }
+
+    private func handleBatchEscape() {
+        if batchCaptureQueue.isCapturing {
+            batchCaptureTask?.cancel()
+            batchCaptureQueue.cancelInFlightCapture()
+            setStatus("已取消缓存截图", kind: "ready")
+        } else if batchCaptureQueue.removeLast() != nil {
+            setStatus(
+                batchCaptureQueue.isEmpty ? "就绪" : "已缓存 \(batchCaptureQueue.count) 张截图",
+                kind: "ready"
+            )
+        } else {
+            return
+        }
+
+        if batchCaptureQueue.isEmpty {
+            resultPanel.hideForCapture()
+        } else {
+            resultPanel.showBatch(count: batchCaptureQueue.count)
+        }
+        syncBatchEscapeMonitor()
+    }
+
+    private func clearBatchCaptureState() {
+        batchCaptureTask?.cancel()
+        batchCaptureTask = nil
+        batchCaptureQueue.clear()
+        batchProgressUsesFloatingPanel = false
+        resultPanel.hideForCapture()
+        syncBatchEscapeMonitor()
     }
 
     private func launchCapture(selection: Bool) throws {
@@ -511,14 +707,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
     }
 
     private func startCaptureState() throws {
-        guard client != nil else {
-            throw AppError.configuration("请先登录 ChatGPT/Codex。")
-        }
-
-        isRunning = true
-        captureToken = UUID()
-        lastResult = ""
-        setStatus("正在截图...", kind: "working", phase: "capturing")
+        try startRequestState(status: "正在截图...", phase: "capturing")
     }
 
     /// 显式钉在主 actor 上：截图状态机（captureToken/isRunning/lastResult）与
@@ -597,6 +786,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
                     self.setStatus("正在思考...", kind: "working", phase: "thinking")
                     self.showOutputPhase("thinking")
                 case .delta(let text):
+                    self.batchProgressUsesFloatingPanel = false
                     self.showOutput(text: text, kind: "working", autoScroll: true, isStreaming: true)
                 }
             }
@@ -620,7 +810,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
     }
 
     private func showOutputPhase(_ phase: String) {
-        if usingTouchBar {
+        if usingTouchBar && !batchProgressUsesFloatingPanel {
             resultPanel.hideForCapture()
             touchBarResult.showPhase(phase)
         } else {
@@ -737,7 +927,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
 
     @objc private func captureFromMenu() {
         do {
-            try launchCapture(selection: false)
+            try launchImmediateCapture()
         } catch {
             lastResult = error.localizedDescription
             showOutput(text: error.localizedDescription, kind: "error")
@@ -811,6 +1001,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
         // 取消在途任务并递增会话代际，作废旧回调，
         // 避免正在进行的 token 刷新完成后把凭证写回钥匙串。
         cancelCaptureForReplacementIfNeeded()
+        clearBatchCaptureState()
         hideOutputForCapture()
         clientGeneration += 1
         KeychainStore.deleteCodexCredentialsAsync()
@@ -820,6 +1011,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
         reloadRuntime()
         setStatus("已退出登录", kind: "warning")
         settingsWindowController?.reload()
+    }
+
+    func applicationWillTerminate(_ notification: Notification) {
+        clearBatchCaptureState()
     }
 
     /// 凭证彻底失效（invalid_grant）时清空本地登录状态，
