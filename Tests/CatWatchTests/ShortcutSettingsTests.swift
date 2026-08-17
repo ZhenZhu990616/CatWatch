@@ -3,6 +3,10 @@ import XCTest
 
 @MainActor
 final class ShortcutSettingsTests: XCTestCase {
+    func testHotKeyParserRejectsMultiplePrimaryKeys() {
+        XCTAssertThrowsError(try Shortcut.parse("cmd+shift+a+b"))
+    }
+
     func testInvalidShortcutRestoresLastAppliedValue() {
         let initial = ConfigDraft.load()
         var applyCount = 0
@@ -27,6 +31,46 @@ final class ShortcutSettingsTests: XCTestCase {
 
         XCTAssertEqual(model.draft.hotKeyText, initial.hotKeyText)
         XCTAssertEqual(model.error(for: .captureShortcut), "不能与其他 CatWatch 快捷键重复。")
+    }
+
+    func testCaptureRegionShortcutCannotDuplicateAnotherShortcut() {
+        let initial = ConfigDraft.load()
+        let model = makeModel(initial: initial) { _, _ in
+            XCTFail("不应应用重复快捷键")
+        }
+
+        model.setShortcut(
+            initial.hotKeyText,
+            at: \ConfigDraft.captureRegionHotKeyText,
+            field: .captureRegionShortcut
+        )
+
+        XCTAssertEqual(model.draft.captureRegionHotKeyText, initial.captureRegionHotKeyText)
+        XCTAssertEqual(model.error(for: .captureRegionShortcut), "不能与其他 CatWatch 快捷键重复。")
+    }
+
+    func testBatchCaptureShortcutCannotDuplicateAnotherShortcut() {
+        let initial = ConfigDraft.load()
+        let model = makeModel(initial: initial) { _, _ in XCTFail("不应应用重复快捷键") }
+
+        model.setShortcut(initial.hotKeyText, at: \ConfigDraft.batchCaptureHotKeyText, field: .batchCaptureShortcut)
+
+        XCTAssertEqual(model.draft.batchCaptureHotKeyText, initial.batchCaptureHotKeyText)
+        XCTAssertEqual(model.error(for: .batchCaptureShortcut), "不能与其他 CatWatch 快捷键重复。")
+    }
+
+    func testResetShortcutsRestoresCaptureRegionShortcutDefault() {
+        let initial = ConfigDraft.load()
+        let model = makeModel(initial: initial) { _, _ in }
+
+        model.setShortcut("cmd+shift+r", at: \ConfigDraft.captureRegionHotKeyText, field: .captureRegionShortcut)
+        model.resetShortcuts()
+
+        XCTAssertEqual(model.draft.hotKeyText, ConfigDraft.defaultHotKey)
+        XCTAssertEqual(model.draft.selectionHotKeyText, ConfigDraft.defaultSelectionHotKey)
+        XCTAssertEqual(model.draft.panelHotKeyText, ConfigDraft.defaultPanelHotKey)
+        XCTAssertEqual(model.draft.captureRegionHotKeyText, ConfigDraft.defaultCaptureRegionHotKey)
+        XCTAssertEqual(model.draft.batchCaptureHotKeyText, ConfigDraft.defaultBatchCaptureHotKey)
     }
 
     func testRegistrationFailureRestoresLastAppliedValue() {

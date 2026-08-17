@@ -23,7 +23,9 @@ enum SettingsUpdateScope: Hashable {
 
         if old.hotKeyText != new.hotKeyText
             || old.selectionHotKeyText != new.selectionHotKeyText
-            || old.panelHotKeyText != new.panelHotKeyText {
+            || old.panelHotKeyText != new.panelHotKeyText
+            || old.captureRegionHotKeyText != new.captureRegionHotKeyText
+            || old.batchCaptureHotKeyText != new.batchCaptureHotKeyText {
             result.insert(.shortcuts)
         }
 

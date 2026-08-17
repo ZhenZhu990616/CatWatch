@@ -10,4 +10,120 @@ final class ConfigDefaultsTests: XCTestCase {
         XCTAssertGreaterThan(aspectRatio, 1.55)
         XCTAssertLessThan(aspectRatio, 1.70)
     }
+
+    func testDefaultShortcutsUseModifierDoubleTaps() throws {
+        XCTAssertEqual(ConfigDraft.defaultHotKey, "cmd double tap")
+        XCTAssertEqual(ConfigDraft.defaultSelectionHotKey, "ctrl double tap")
+        XCTAssertEqual(ConfigDraft.defaultPanelHotKey, "opt double tap")
+        XCTAssertEqual(ConfigDraft.defaultCaptureRegionHotKey, "cmd+e")
+        XCTAssertEqual(ConfigDraft.defaultBatchCaptureHotKey, "shift double tap")
+
+        XCTAssertEqual(try Shortcut.parse(ConfigDraft.defaultHotKey).displayText, "⌘ double tap")
+        XCTAssertEqual(try Shortcut.parse(ConfigDraft.defaultSelectionHotKey).displayText, "⌃ double tap")
+        XCTAssertEqual(try Shortcut.parse(ConfigDraft.defaultPanelHotKey).displayText, "⌥ double tap")
+        XCTAssertEqual(try Shortcut.parse(ConfigDraft.defaultCaptureRegionHotKey).displayText, "⌘ E")
+        XCTAssertEqual(try Shortcut.parse(ConfigDraft.defaultBatchCaptureHotKey).displayText, "⇧ double tap")
+    }
+
+    func testCaptureRegionShortcutDefaultsWhenNoValueIsStored() {
+        let defaults = UserDefaults.standard
+        let key = "screenLLM.captureRegionHotKey"
+        let previous = defaults.object(forKey: key)
+        defer {
+            if let previous {
+                defaults.set(previous, forKey: key)
+            } else {
+                defaults.removeObject(forKey: key)
+            }
+        }
+
+        defaults.removeObject(forKey: key)
+
+        XCTAssertEqual(ConfigDraft.load().captureRegionHotKeyText, ConfigDraft.defaultCaptureRegionHotKey)
+    }
+
+    func testLegacyCaptureRegionShortcutMigratesWithoutOverwritingCustomShortcut() {
+        let defaults = UserDefaults.standard
+        let keys = ["screenLLM.captureRegionHotKey", "screenLLM.captureRegionShortcutMigrationVersion"]
+        let previous = Dictionary(uniqueKeysWithValues: keys.map { ($0, defaults.object(forKey: $0)) })
+        defer {
+            for (key, value) in previous {
+                if let value { defaults.set(value, forKey: key) } else { defaults.removeObject(forKey: key) }
+            }
+        }
+
+        defaults.removeObject(forKey: "screenLLM.captureRegionShortcutMigrationVersion")
+        defaults.set("shift double tap", forKey: "screenLLM.captureRegionHotKey")
+        XCTAssertEqual(ConfigDraft.load().captureRegionHotKeyText, "cmd+e")
+
+        defaults.removeObject(forKey: "screenLLM.captureRegionShortcutMigrationVersion")
+        defaults.set("cmd+shift+r", forKey: "screenLLM.captureRegionHotKey")
+        XCTAssertEqual(ConfigDraft.load().captureRegionHotKeyText, "cmd+shift+r")
+    }
+
+    func testLegacyDefaultShortcutsMigrateWithoutOverwritingCustomShortcut() {
+        let defaults = UserDefaults.standard
+        let keys = [
+            "screenLLM.hotKey",
+            "screenLLM.selectionHotKey",
+            "screenLLM.panelHotKey",
+            "screenLLM.shortcutDefaultsMigrationVersion"
+        ]
+        let previous = Dictionary(uniqueKeysWithValues: keys.map { ($0, defaults.object(forKey: $0)) })
+        defer {
+            for (key, value) in previous {
+                if let value {
+                    defaults.set(value, forKey: key)
+                } else {
+                    defaults.removeObject(forKey: key)
+                }
+            }
+        }
+
+        defaults.removeObject(forKey: "screenLLM.shortcutDefaultsMigrationVersion")
+        defaults.set("cmd+shift+l", forKey: "screenLLM.hotKey")
+        defaults.set("cmd+shift+k", forKey: "screenLLM.selectionHotKey")
+        defaults.set("cmd+shift+p", forKey: "screenLLM.panelHotKey")
+
+        let draft = ConfigDraft.load()
+
+        XCTAssertEqual(draft.hotKeyText, ConfigDraft.defaultHotKey)
+        XCTAssertEqual(draft.selectionHotKeyText, ConfigDraft.defaultSelectionHotKey)
+        XCTAssertEqual(draft.panelHotKeyText, "cmd+shift+p")
+        XCTAssertEqual(defaults.string(forKey: "screenLLM.hotKey"), ConfigDraft.defaultHotKey)
+        XCTAssertEqual(defaults.string(forKey: "screenLLM.selectionHotKey"), ConfigDraft.defaultSelectionHotKey)
+        XCTAssertEqual(defaults.string(forKey: "screenLLM.panelHotKey"), "cmd+shift+p")
+    }
+
+    func testSupportedGPT55ModelIsNotMigratedOnNextLaunch() {
+        let defaults = UserDefaults.standard
+        let key = "screenLLM.model"
+        let previous = defaults.object(forKey: key)
+        defer {
+            if let previous {
+                defaults.set(previous, forKey: key)
+            } else {
+                defaults.removeObject(forKey: key)
+            }
+        }
+
+        defaults.set("gpt-5.5", forKey: key)
+
+        XCTAssertEqual(ConfigDraft.load().model, "gpt-5.5")
+    }
+
+    func testUnknownModelCannotBuildClientConfiguration() {
+        var draft = ConfigDraft.load()
+        draft.model = "gpt-not-a-real-model"
+        let credentials = CodexOAuthCredentials(
+            access: "access",
+            refresh: "refresh",
+            expires: Date().timeIntervalSince1970 + 3600,
+            accountId: "account"
+        )
+
+        XCTAssertThrowsError(try draft.makeConfig(codexCredentials: credentials)) { error in
+            XCTAssertEqual(error.localizedDescription, "模型输入有误。")
+        }
+    }
 }

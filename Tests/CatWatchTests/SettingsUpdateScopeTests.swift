@@ -16,6 +16,18 @@ final class SettingsUpdateScopeTests: XCTestCase {
         XCTAssertEqual(SettingsUpdateScope.changed(from: base, to: changed), [.shortcuts])
     }
 
+    func testCaptureRegionShortcutOnlyRequestsShortcutUpdate() {
+        var changed = base
+        changed.captureRegionHotKeyText = "cmd+shift+r"
+        XCTAssertEqual(SettingsUpdateScope.changed(from: base, to: changed), [.shortcuts])
+    }
+
+    func testBatchCaptureShortcutOnlyRequestsShortcutUpdate() {
+        var changed = base
+        changed.batchCaptureHotKeyText = "cmd+shift+b"
+        XCTAssertEqual(SettingsUpdateScope.changed(from: base, to: changed), [.shortcuts])
+    }
+
     func testClientFieldsOnlyRequestClientUpdate() {
         var changed = base
         changed.model = base.model == "gpt-5.6-sol" ? "gpt-5.6-terra" : "gpt-5.6-sol"

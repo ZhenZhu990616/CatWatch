@@ -43,6 +43,8 @@ struct ConfigDraft: Equatable {
     var hotKeyText: String
     var selectionHotKeyText: String
     var panelHotKeyText: String
+    var captureRegionHotKeyText: String
+    var batchCaptureHotKeyText: String
     var maxImageEdge: Int
     var captureRegionEnabled: Bool
     var captureRegionX: Double
@@ -70,6 +72,11 @@ struct ConfigDraft: Equatable {
         ("gpt-5.6-luna", "最快最省"),
         ("gpt-5.5", "上一代旗舰")
     ]
+
+    static func isSupportedModel(_ value: String) -> Bool {
+        let model = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        return suggestedModels.contains { $0.id == model }
+    }
     static let defaultThinkingEnabled = true
     static let defaultReasoningEffort: ReasoningEffort = .medium
     static let defaultReasoningSummary: ReasoningSummary = .none
@@ -83,9 +90,11 @@ struct ConfigDraft: Equatable {
     static let defaultTouchBarTextAlignment: TouchBarTextAlignment = .center
     static let defaultPrompt = "请分析这张截图，并用中文简洁回答。"
     static let defaultInstructions = "你是一个简洁、准确的中文屏幕分析助手。"
-    static let defaultHotKey = "cmd+shift+l"
-    static let defaultSelectionHotKey = "cmd+shift+k"
-    static let defaultPanelHotKey = "cmd+shift+o"
+    static let defaultHotKey = "cmd double tap"
+    static let defaultSelectionHotKey = "ctrl double tap"
+    static let defaultPanelHotKey = "opt double tap"
+    static let defaultCaptureRegionHotKey = "cmd+e"
+    static let defaultBatchCaptureHotKey = "shift double tap"
     static let defaultMaxImageEdge = 1600
     static let defaultCaptureRegionEnabled = false
     static let defaultPanelOpacity = 0.94
@@ -95,17 +104,26 @@ struct ConfigDraft: Equatable {
     static let defaultPanelWidth = 520
     static let defaultPanelHeight = 320
 
+    private static let shortcutDefaultsMigrationVersion = 1
+    private static let captureRegionShortcutMigrationVersion = 1
+    private static let legacyDefaultHotKey = "cmd+shift+l"
+    private static let legacyDefaultSelectionHotKey = "cmd+shift+k"
+    private static let legacyDefaultPanelHotKey = "cmd+shift+o"
+    private static let legacyDefaultCaptureRegionHotKey = "shift double tap"
+
     static func load() -> ConfigDraft {
         let defaults = UserDefaults.standard
         let env = ProcessInfo.processInfo.environment
+        migrateLegacyShortcutDefaultsIfNeeded(defaults)
+        migrateCaptureRegionShortcutDefaultIfNeeded(defaults)
         let storedPrompt = defaults.string(forKey: Keys.prompt)
         let prompt = storedPrompt == "Analyze this screenshot and answer concisely." ? defaultPrompt : storedPrompt
 
         let storedModel = defaults.string(forKey: Keys.model)
         let model: String?
         switch storedModel {
-        case "gpt-4o-mini", "gpt-5.5":
-            // 历史默认值迁移到当前默认模型。
+        case "gpt-4o-mini":
+            // 历史默认值迁移到当前默认模型；gpt-5.5 仍是可选模型，不能迁移。
             model = defaultModel
         case "gpt-5.6":
             // 裸 "gpt-5.6" 不是有效 ID（有效：gpt-5.6-sol/terra/luna），
@@ -181,6 +199,12 @@ struct ConfigDraft: Equatable {
             panelHotKeyText: defaults.string(forKey: Keys.panelHotKey)
                 ?? env["SCREEN_LLM_PANEL_HOTKEY"]
                 ?? defaultPanelHotKey,
+            captureRegionHotKeyText: defaults.string(forKey: Keys.captureRegionHotKey)
+                ?? env["SCREEN_LLM_CAPTURE_REGION_HOTKEY"]
+                ?? defaultCaptureRegionHotKey,
+            batchCaptureHotKeyText: defaults.string(forKey: Keys.batchCaptureHotKey)
+                ?? env["SCREEN_LLM_BATCH_CAPTURE_HOTKEY"]
+                ?? defaultBatchCaptureHotKey,
             maxImageEdge: defaults.object(forKey: Keys.maxImageEdge) == nil
                 ? Int(env["SCREEN_LLM_MAX_IMAGE_EDGE"] ?? "") ?? defaultMaxImageEdge
                 : defaults.integer(forKey: Keys.maxImageEdge),
@@ -228,6 +252,36 @@ struct ConfigDraft: Equatable {
         )
     }
 
+    private static func migrateLegacyShortcutDefaultsIfNeeded(_ defaults: UserDefaults) {
+        guard defaults.integer(forKey: Keys.shortcutDefaultsMigrationVersion) < shortcutDefaultsMigrationVersion else {
+            return
+        }
+
+        let migrations = [
+            (Keys.hotKey, legacyDefaultHotKey, defaultHotKey),
+            (Keys.selectionHotKey, legacyDefaultSelectionHotKey, defaultSelectionHotKey),
+            (Keys.panelHotKey, legacyDefaultPanelHotKey, defaultPanelHotKey)
+        ]
+
+        for (key, legacyValue, replacement) in migrations {
+            if defaults.string(forKey: key) == legacyValue {
+                defaults.set(replacement, forKey: key)
+            }
+        }
+
+        defaults.set(shortcutDefaultsMigrationVersion, forKey: Keys.shortcutDefaultsMigrationVersion)
+    }
+
+    private static func migrateCaptureRegionShortcutDefaultIfNeeded(_ defaults: UserDefaults) {
+        guard defaults.integer(forKey: Keys.captureRegionShortcutMigrationVersion) < captureRegionShortcutMigrationVersion else {
+            return
+        }
+        if defaults.string(forKey: Keys.captureRegionHotKey) == legacyDefaultCaptureRegionHotKey {
+            defaults.set(defaultCaptureRegionHotKey, forKey: Keys.captureRegionHotKey)
+        }
+        defaults.set(captureRegionShortcutMigrationVersion, forKey: Keys.captureRegionShortcutMigrationVersion)
+    }
+
     func save() {
         let defaults = UserDefaults.standard
         defaults.set(model, forKey: Keys.model)
@@ -247,6 +301,8 @@ struct ConfigDraft: Equatable {
         defaults.set(hotKeyText, forKey: Keys.hotKey)
         defaults.set(selectionHotKeyText, forKey: Keys.selectionHotKey)
         defaults.set(panelHotKeyText, forKey: Keys.panelHotKey)
+        defaults.set(captureRegionHotKeyText, forKey: Keys.captureRegionHotKey)
+        defaults.set(batchCaptureHotKeyText, forKey: Keys.batchCaptureHotKey)
         defaults.set(maxImageEdge, forKey: Keys.maxImageEdge)
         defaults.set(captureRegionEnabled, forKey: Keys.captureRegionEnabled)
         defaults.set(captureRegionX, forKey: Keys.captureRegionX)
@@ -284,6 +340,9 @@ struct ConfigDraft: Equatable {
         guard !trimmedModel.isEmpty else {
             throw AppError.configuration("模型不能为空。")
         }
+        guard Self.isSupportedModel(trimmedModel) else {
+            throw AppError.configuration("模型输入有误。")
+        }
 
         return AppConfig(
             codexCredentials: credentials,
@@ -315,6 +374,14 @@ struct ConfigDraft: Equatable {
 
     func makeSelectionShortcut() throws -> Shortcut {
         try Shortcut.parse(selectionHotKeyText)
+    }
+
+    func makeCaptureRegionShortcut() throws -> Shortcut {
+        try Shortcut.parse(captureRegionHotKeyText)
+    }
+
+    func makeBatchCaptureShortcut() throws -> Shortcut {
+        try Shortcut.parse(batchCaptureHotKeyText)
     }
 
     var normalizedPanelOpacity: Double {
@@ -532,6 +599,9 @@ private enum Keys {
     static let hotKey = "screenLLM.hotKey"
     static let selectionHotKey = "screenLLM.selectionHotKey"
     static let panelHotKey = "screenLLM.panelHotKey"
+    static let captureRegionHotKey = "screenLLM.captureRegionHotKey"
+    static let batchCaptureHotKey = "screenLLM.batchCaptureHotKey"
+    static let captureRegionShortcutMigrationVersion = "screenLLM.captureRegionShortcutMigrationVersion"
     static let maxImageEdge = "screenLLM.maxImageEdge"
     static let captureRegionEnabled = "screenLLM.captureRegionEnabled"
     static let captureRegionX = "screenLLM.captureRegionX"
@@ -546,6 +616,7 @@ private enum Keys {
     static let panelHeight = "screenLLM.panelHeight"
     static let panelOriginX = "screenLLM.panelOriginX"
     static let panelOriginY = "screenLLM.panelOriginY"
+    static let shortcutDefaultsMigrationVersion = "screenLLM.shortcutDefaultsMigrationVersion"
 }
 
 struct PromptPreset: Codable, Identifiable, Equatable {

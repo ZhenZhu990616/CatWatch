@@ -1,5 +1,15 @@
+import AppKit
 import Foundation
+import ServiceManagement
 import SwiftUI
+
+struct SettingsState: Equatable {
+    let signedIn: Bool
+    let accountId: String
+    let screenPermission: Bool
+    let statusText: String
+    let hotKeyStatus: String
+}
 
 enum SettingsField: Hashable {
     case model
@@ -8,18 +18,30 @@ enum SettingsField: Hashable {
     case captureShortcut
     case selectionShortcut
     case panelShortcut
+    case captureRegionShortcut
+    case batchCaptureShortcut
 }
 
 @MainActor
 final class SettingsViewModel: ObservableObject {
+    @Published var selectedSection: SettingsSection = .shortcuts
     @Published private(set) var draft: ConfigDraft
     @Published private(set) var lastAppliedDraft: ConfigDraft
     @Published private(set) var state: SettingsState
     @Published private(set) var fieldErrors: [SettingsField: String] = [:]
+    @Published var presets: [PromptPreset]
+    @Published var newPresetName = ""
+    @Published private(set) var launchAtLogin: Bool
+    @Published private(set) var launchAtLoginError: String?
+
+    let launchAtLoginAvailable = Bundle.main.bundlePath.hasSuffix(".app")
 
     private let draftProvider: () -> ConfigDraft
     private let stateProvider: () -> SettingsState
     private let applyDraft: (ConfigDraft, SettingsUpdateScope) throws -> Void
+    private let onLogin: () -> Void
+    private let onLogout: () -> Void
+    private let onPermission: () -> Void
     private let debounceNanoseconds: UInt64
     private var pendingTextTasks: [SettingsField: Task<Void, Never>] = [:]
 
@@ -28,6 +50,9 @@ final class SettingsViewModel: ObservableObject {
         draftProvider: (() -> ConfigDraft)? = nil,
         stateProvider: @escaping () -> SettingsState,
         applyDraft: @escaping (ConfigDraft, SettingsUpdateScope) throws -> Void,
+        onLogin: @escaping () -> Void = {},
+        onLogout: @escaping () -> Void = {},
+        onPermission: @escaping () -> Void = {},
         debounceNanoseconds: UInt64 = 300_000_000
     ) {
         draft = initialDraft
@@ -35,12 +60,19 @@ final class SettingsViewModel: ObservableObject {
         self.draftProvider = draftProvider ?? { initialDraft }
         self.stateProvider = stateProvider
         self.applyDraft = applyDraft
+        self.onLogin = onLogin
+        self.onLogout = onLogout
+        self.onPermission = onPermission
         self.debounceNanoseconds = debounceNanoseconds
         state = stateProvider()
+        presets = PromptPresetStore.load()
+        launchAtLogin = SMAppService.mainApp.status == .enabled
     }
 
     func reload() {
         state = stateProvider()
+        presets = PromptPresetStore.load()
+        launchAtLogin = SMAppService.mainApp.status == .enabled
         guard pendingTextTasks.isEmpty, fieldErrors.isEmpty else { return }
         let latest = draftProvider()
         draft = latest
@@ -126,7 +158,9 @@ final class SettingsViewModel: ObservableObject {
             let shortcuts = [
                 try Shortcut.parse(candidate.hotKeyText).displayText,
                 try Shortcut.parse(candidate.selectionHotKeyText).displayText,
-                try Shortcut.parse(candidate.panelHotKeyText).displayText
+                try Shortcut.parse(candidate.panelHotKeyText).displayText,
+                try Shortcut.parse(candidate.captureRegionHotKeyText).displayText,
+                try Shortcut.parse(candidate.batchCaptureHotKeyText).displayText
             ]
             guard Set(shortcuts).count == shortcuts.count else {
                 throw SettingsValidationError.duplicateShortcut
@@ -146,6 +180,128 @@ final class SettingsViewModel: ObservableObject {
         fieldErrors[field]
     }
 
+    func resetShortcuts() {
+        var candidate = lastAppliedDraft
+        candidate.hotKeyText = ConfigDraft.defaultHotKey
+        candidate.selectionHotKeyText = ConfigDraft.defaultSelectionHotKey
+        candidate.panelHotKeyText = ConfigDraft.defaultPanelHotKey
+        candidate.captureRegionHotKeyText = ConfigDraft.defaultCaptureRegionHotKey
+        candidate.batchCaptureHotKeyText = ConfigDraft.defaultBatchCaptureHotKey
+
+        do {
+            try applyDraft(candidate, .shortcuts)
+            draft.hotKeyText = candidate.hotKeyText
+            draft.selectionHotKeyText = candidate.selectionHotKeyText
+            draft.panelHotKeyText = candidate.panelHotKeyText
+            draft.captureRegionHotKeyText = candidate.captureRegionHotKeyText
+            draft.batchCaptureHotKeyText = candidate.batchCaptureHotKeyText
+            lastAppliedDraft = candidate
+            fieldErrors[.captureShortcut] = nil
+            fieldErrors[.selectionShortcut] = nil
+            fieldErrors[.panelShortcut] = nil
+            fieldErrors[.captureRegionShortcut] = nil
+            fieldErrors[.batchCaptureShortcut] = nil
+        } catch {
+            fieldErrors[.captureShortcut] = error.localizedDescription
+        }
+    }
+
+    func setMaxOutputTokens(_ value: Int) {
+        set(max(0, value), at: \ConfigDraft.maxOutputTokens, scope: .client)
+    }
+
+    func setMaxImageEdge(_ value: Int) {
+        set(max(640, value), at: \ConfigDraft.maxImageEdge, scope: .client)
+    }
+
+    func setCaptureRegion(_ rect: CGRect) {
+        var candidate = lastAppliedDraft
+        candidate.captureRegionEnabled = true
+        candidate.captureRegionX = rect.origin.x.rounded()
+        candidate.captureRegionY = rect.origin.y.rounded()
+        candidate.captureRegionWidth = rect.width.rounded()
+        candidate.captureRegionHeight = rect.height.rounded()
+
+        do {
+            try applyDraft(candidate, .storageOnly)
+            draft.captureRegionEnabled = candidate.captureRegionEnabled
+            draft.captureRegionX = candidate.captureRegionX
+            draft.captureRegionY = candidate.captureRegionY
+            draft.captureRegionWidth = candidate.captureRegionWidth
+            draft.captureRegionHeight = candidate.captureRegionHeight
+            lastAppliedDraft = candidate
+        } catch {
+            draft.captureRegionEnabled = lastAppliedDraft.captureRegionEnabled
+        }
+    }
+
+    func chooseCaptureRegion() {
+        Task { @MainActor in
+            let previousWindow = NSApp.keyWindow
+            previousWindow?.orderOut(nil)
+            try? await Task.sleep(nanoseconds: 120_000_000)
+            defer {
+                NSApp.activate(ignoringOtherApps: true)
+                previousWindow?.makeKeyAndOrderFront(nil)
+            }
+
+            guard let rect = try? await SelectionCapture.selectRegion() else { return }
+            setCaptureRegion(rect)
+        }
+    }
+
+    func login() { onLogin() }
+
+    func logout() {
+        onLogout()
+        reload()
+    }
+
+    func applyPreset(_ preset: PromptPreset) {
+        setText(preset.text, at: \ConfigDraft.prompt, field: .prompt)
+    }
+
+    func addPreset() {
+        let name = newPresetName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty else { return }
+        presets.append(PromptPreset(id: UUID(), name: name, text: draft.prompt))
+        PromptPresetStore.save(presets)
+        newPresetName = ""
+    }
+
+    func deletePreset(_ preset: PromptPreset) {
+        presets.removeAll { $0.id == preset.id }
+        PromptPresetStore.save(presets)
+    }
+
+    func setLaunchAtLogin(_ enabled: Bool) {
+        do {
+            if enabled {
+                try SMAppService.mainApp.register()
+            } else {
+                try SMAppService.mainApp.unregister()
+            }
+            launchAtLogin = enabled
+            launchAtLoginError = nil
+        } catch {
+            launchAtLogin = SMAppService.mainApp.status == .enabled
+            launchAtLoginError = error.localizedDescription
+        }
+    }
+
+    func requestScreenPermission() {
+        onPermission()
+        reload()
+    }
+
+    var accountText: String {
+        state.signedIn ? "已登录 · \(state.accountId.isEmpty ? "Codex" : state.accountId)" : "未登录"
+    }
+
+    var permissionText: String {
+        state.screenPermission ? "屏幕录制已授权" : "屏幕录制未授权"
+    }
+
     private func applyText(
         at keyPath: WritableKeyPath<ConfigDraft, String>,
         field: SettingsField
@@ -153,6 +309,10 @@ final class SettingsViewModel: ObservableObject {
         let value = draft[keyPath: keyPath]
         if field == .model && value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             fieldErrors[field] = "模型不能为空。"
+            return
+        }
+        if field == .model && !ConfigDraft.isSupportedModel(value) {
+            fieldErrors[field] = "模型输入有误。"
             return
         }
 
