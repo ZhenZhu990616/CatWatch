@@ -1,5 +1,6 @@
 import CoreGraphics
 import Foundation
+import LocalAuthentication
 import Security
 
 struct AppConfig {
@@ -699,12 +700,17 @@ enum KeychainStore {
     }
 
     private static func readString(account: String) -> String? {
+        let context = LAContext()
+        context.interactionNotAllowed = true
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
             kSecAttrAccount as String: account,
             kSecReturnData as String: true,
-            kSecMatchLimit as String: kSecMatchLimitOne
+            kSecMatchLimit as String: kSecMatchLimitOne,
+            // 启动阶段不得为读取旧凭证强制弹出钥匙串认证窗口；
+            // 若系统需要交互授权则作为未登录处理，等待用户主动登录。
+            kSecUseAuthenticationContext as String: context
         ]
 
         var item: CFTypeRef?

@@ -170,8 +170,20 @@ final class ShortcutRegistry {
         case .doubleTap(let key):
             doubleTapCallbacks.append((key, callback))
             installDoubleTapMonitorsIfNeeded()
-            requestAccessibilityIfNeeded()
         }
+    }
+
+    /// 仅由用户主动操作触发系统授权提示。注册快捷键时不能调用它，
+    /// 否则用户拒绝后每次重载快捷键都会再次弹窗。
+    func requestAccessibilityPermission() {
+        guard !AXIsProcessTrusted() else { return }
+        let key = kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String
+        let options = [key: true] as CFDictionary
+        _ = AXIsProcessTrustedWithOptions(options)
+    }
+
+    var hasAccessibilityPermission: Bool {
+        AXIsProcessTrusted()
     }
 
     func unregisterAll() {
@@ -283,12 +295,6 @@ final class ShortcutRegistry {
         previousFlags = normalized
     }
 
-    private func requestAccessibilityIfNeeded() {
-        guard !AXIsProcessTrusted() else { return }
-        let key = kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String
-        let options = [key: true] as CFDictionary
-        _ = AXIsProcessTrustedWithOptions(options)
-    }
 }
 
 private let keyCodes: [String: Int] = [

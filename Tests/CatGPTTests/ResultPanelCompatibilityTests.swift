@@ -61,6 +61,25 @@ final class ResultPanelCompatibilityTests: XCTestCase {
     }
 
     @MainActor
+    func testResultPanelTextIsNotSelectableAndEntireSurfaceUsesWindowDragging() throws {
+        let app = NSApplication.shared
+        let existingWindows = Set(app.windows.map(ObjectIdentifier.init))
+        let controller = ResultPanelController()
+
+        controller.show(text: "不可选文本", kind: "ready")
+
+        let panel = try XCTUnwrap(
+            app.windows.first { !existingWindows.contains(ObjectIdentifier($0)) }
+        )
+        defer { panel.close() }
+
+        let textView = try XCTUnwrap(firstSubview(of: NSTextView.self, in: panel.contentView))
+        XCTAssertFalse(textView.isSelectable)
+        XCTAssertEqual(String(describing: type(of: panel)), "ResultPanelWindow")
+        XCTAssertTrue(panel.isMovableByWindowBackground)
+    }
+
+    @MainActor
     func testBatchIndicatorShowsOnlyCachedStarsAndHidesAnswerText() throws {
         let app = NSApplication.shared
         let existingWindows = Set(app.windows.map(ObjectIdentifier.init))

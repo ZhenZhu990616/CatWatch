@@ -860,6 +860,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
         setStatus("请在系统设置中启用 CatGPT 的屏幕录制权限，完成后重新打开应用", kind: "warning")
     }
 
+    private func requestAccessibilityPermission() {
+        if shortcutRegistry.hasAccessibilityPermission {
+            setStatus("辅助功能权限已授权", kind: "ready")
+            return
+        }
+
+        shortcutRegistry.requestAccessibilityPermission()
+        setStatus("请在系统设置中启用 CatGPT 的辅助功能权限，完成后重新打开设置", kind: "warning")
+    }
+
     @objc private func openSettings() {
         if settingsWindowController == nil {
             settingsWindowController = SettingsWindowController(
@@ -869,6 +879,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
                         signedIn: self?.credentials != nil,
                         accountId: self?.credentials?.accountId ?? "",
                         screenPermission: Screenshotter.hasPermission(),
+                        accessibilityPermission: self?.shortcutRegistry.hasAccessibilityPermission ?? false,
                         statusText: self?.statusText ?? "就绪",
                         hotKeyStatus: self?.hotKeyStatus ?? "快捷键未启用"
                     )
@@ -879,7 +890,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
                 },
                 onLogin: { [weak self] in self?.startLoginFromSettings() },
                 onLogout: { [weak self] in self?.logout() },
-                onPermission: { [weak self] in self?.requestScreenPermission() }
+                onPermission: { [weak self] in self?.requestScreenPermission() },
+                onAccessibilityPermission: { [weak self] in self?.requestAccessibilityPermission() }
             )
         }
         settingsWindowController?.showWindow(nil)
@@ -1086,6 +1098,19 @@ enum StatusIcon {
     }
 }
 
+final class ResultPanelWindow: NSPanel {
+    override func sendEvent(_ event: NSEvent) {
+        guard event.type == .leftMouseDown,
+              let contentView,
+              contentView.bounds.contains(contentView.convert(event.locationInWindow, from: nil)) else {
+            super.sendEvent(event)
+            return
+        }
+
+        performDrag(with: event)
+    }
+}
+
 final class ResultPanelController: NSObject {
     private var panel: NSPanel?
     private let backgroundView = NSVisualEffectView()
@@ -1253,7 +1278,7 @@ final class ResultPanelController: NSObject {
     }
 
     private func makePanel() -> NSPanel {
-        let panel = NSPanel(
+        let panel = ResultPanelWindow(
             contentRect: NSRect(x: 0, y: 0, width: CGFloat(panelWidth), height: CGFloat(panelHeight)),
             styleMask: [.nonactivatingPanel, .borderless, .resizable],
             backing: .buffered,
@@ -1299,7 +1324,7 @@ final class ResultPanelController: NSObject {
         batchIndicatorView.isHidden = true
 
         textView.isEditable = false
-        textView.isSelectable = true
+        textView.isSelectable = false
         textView.drawsBackground = false
         textView.textContainerInset = NSSize(width: 0, height: 0)
         textView.textContainer?.lineFragmentPadding = 0

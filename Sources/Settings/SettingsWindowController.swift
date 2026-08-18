@@ -12,7 +12,8 @@ final class SettingsWindowController: NSWindowController {
         onApply: @escaping (ConfigDraft, SettingsUpdateScope) throws -> Void,
         onLogin: @escaping () -> Void,
         onLogout: @escaping () -> Void,
-        onPermission: @escaping () -> Void
+        onPermission: @escaping () -> Void,
+        onAccessibilityPermission: @escaping () -> Void = {}
     ) {
         model = SettingsViewModel(
             initialDraft: draftProvider(),
@@ -21,7 +22,8 @@ final class SettingsWindowController: NSWindowController {
             applyDraft: onApply,
             onLogin: onLogin,
             onLogout: onLogout,
-            onPermission: onPermission
+            onPermission: onPermission,
+            onAccessibilityPermission: onAccessibilityPermission
         )
 
         let defaultContentSize = NSSize(width: 800, height: 580)

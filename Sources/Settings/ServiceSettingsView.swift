@@ -28,6 +28,14 @@ struct ServiceSettingsView: View {
                             Button("打开系统设置…") { model.requestScreenPermission() }
                         }
                     }
+                    SettingsDivider()
+                    SettingsRow("辅助功能", subtitle: model.accessibilityPermissionText) {
+                        HStack(spacing: 8) {
+                            Image(systemName: model.state.accessibilityPermission ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
+                                .foregroundStyle(model.state.accessibilityPermission ? .green : .orange)
+                            Button("请求授权…") { model.requestAccessibilityPermission() }
+                        }
+                    }
                 }
 
                 SettingsGroup("运行") {

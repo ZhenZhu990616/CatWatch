@@ -7,8 +7,25 @@ struct SettingsState: Equatable {
     let signedIn: Bool
     let accountId: String
     let screenPermission: Bool
+    let accessibilityPermission: Bool
     let statusText: String
     let hotKeyStatus: String
+
+    init(
+        signedIn: Bool,
+        accountId: String,
+        screenPermission: Bool,
+        accessibilityPermission: Bool = false,
+        statusText: String,
+        hotKeyStatus: String
+    ) {
+        self.signedIn = signedIn
+        self.accountId = accountId
+        self.screenPermission = screenPermission
+        self.accessibilityPermission = accessibilityPermission
+        self.statusText = statusText
+        self.hotKeyStatus = hotKeyStatus
+    }
 }
 
 enum SettingsField: Hashable {
@@ -42,6 +59,7 @@ final class SettingsViewModel: ObservableObject {
     private let onLogin: () -> Void
     private let onLogout: () -> Void
     private let onPermission: () -> Void
+    private let onAccessibilityPermission: () -> Void
     private let debounceNanoseconds: UInt64
     private var pendingTextTasks: [SettingsField: Task<Void, Never>] = [:]
 
@@ -53,6 +71,7 @@ final class SettingsViewModel: ObservableObject {
         onLogin: @escaping () -> Void = {},
         onLogout: @escaping () -> Void = {},
         onPermission: @escaping () -> Void = {},
+        onAccessibilityPermission: @escaping () -> Void = {},
         debounceNanoseconds: UInt64 = 300_000_000
     ) {
         draft = initialDraft
@@ -63,6 +82,7 @@ final class SettingsViewModel: ObservableObject {
         self.onLogin = onLogin
         self.onLogout = onLogout
         self.onPermission = onPermission
+        self.onAccessibilityPermission = onAccessibilityPermission
         self.debounceNanoseconds = debounceNanoseconds
         state = stateProvider()
         presets = PromptPresetStore.load()
@@ -294,12 +314,21 @@ final class SettingsViewModel: ObservableObject {
         reload()
     }
 
+    func requestAccessibilityPermission() {
+        onAccessibilityPermission()
+        reload()
+    }
+
     var accountText: String {
         state.signedIn ? "已登录 · \(state.accountId.isEmpty ? "Codex" : state.accountId)" : "未登录"
     }
 
     var permissionText: String {
         state.screenPermission ? "屏幕录制已授权" : "屏幕录制未授权"
+    }
+
+    var accessibilityPermissionText: String {
+        state.accessibilityPermission ? "辅助功能已授权" : "双击修饰键快捷键需要授权"
     }
 
     private func applyText(
