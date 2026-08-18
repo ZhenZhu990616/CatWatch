@@ -79,6 +79,26 @@ final class ResultPanelCompatibilityTests: XCTestCase {
         XCTAssertTrue(panel.isMovableByWindowBackground)
     }
 
+    func testWindowDraggingLeavesTheResizeBorderForAppKit() throws {
+        let source = try String(
+            contentsOf: URL(fileURLWithPath: #filePath)
+                .deletingLastPathComponent()
+                .deletingLastPathComponent()
+                .deletingLastPathComponent()
+                .appendingPathComponent("Sources/main.swift"),
+            encoding: .utf8
+        )
+        let windowImplementation = try XCTUnwrap(
+            source.range(of: "final class ResultPanelWindow")
+                .map { String(source[$0.lowerBound..<source.range(of: "final class ResultPanelController")!.lowerBound]) }
+        )
+
+        XCTAssertTrue(
+            windowImplementation.contains("contentView.bounds.insetBy(dx: resizeBorderWidth, dy: resizeBorderWidth)"),
+            "拖动范围必须排除窗口边缘，才能把缩放热区交回 AppKit。"
+        )
+    }
+
     @MainActor
     func testBatchIndicatorShowsOnlyCachedStarsAndHidesAnswerText() throws {
         let app = NSApplication.shared

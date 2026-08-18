@@ -1099,10 +1099,13 @@ enum StatusIcon {
 }
 
 final class ResultPanelWindow: NSPanel {
+    private let resizeBorderWidth: CGFloat = 8
+
     override func sendEvent(_ event: NSEvent) {
         guard event.type == .leftMouseDown,
               let contentView,
-              contentView.bounds.contains(contentView.convert(event.locationInWindow, from: nil)) else {
+              contentView.bounds.insetBy(dx: resizeBorderWidth, dy: resizeBorderWidth)
+                .contains(contentView.convert(event.locationInWindow, from: nil)) else {
             super.sendEvent(event)
             return
         }
